@@ -81,7 +81,7 @@ jobs:
           chmod 600 "$RUNNER_TEMP/habit-release.jks"
 
       - name: Unit tests
-        run: ./gradlew test
+        run: ./gradlew testDebugUnitTest
 
       - name: Build signed release APK
         env:
