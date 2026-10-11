@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 6,
-    "identityHash": "00000000000000000000000000000006",
+    "identityHash": "98a518d52561db80793f7f11de91b494",
     "entities": [
       {
         "tableName": "habits",
@@ -242,7 +242,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '00000000000000000000000000000006')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '98a518d52561db80793f7f11de91b494')"
     ]
   }
 }
