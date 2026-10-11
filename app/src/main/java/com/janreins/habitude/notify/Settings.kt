@@ -77,6 +77,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_BACKUP_FAILED, false)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_BACKUP_FAILED, value).apply()
 
+    /** Remembers lost folder access so the user is notified only once until it is fixed. */
+    var autoBackupAccessLost: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_BACKUP_ACCESS_LOST, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_BACKUP_ACCESS_LOST, value).apply()
+
     fun clearPin() {
         prefs.edit()
             .remove(KEY_BIOMETRIC)
@@ -98,6 +103,7 @@ class Settings(context: Context) {
         const val KEY_AUTO_BACKUP_FOLDER = "auto_backup_folder"
         const val KEY_LAST_AUTO_BACKUP = "last_auto_backup"
         const val KEY_AUTO_BACKUP_FAILED = "auto_backup_failed"
+        const val KEY_AUTO_BACKUP_ACCESS_LOST = "auto_backup_access_lost"
         const val KEY_MILESTONES_STARTED = "milestones_started"
     }
 }

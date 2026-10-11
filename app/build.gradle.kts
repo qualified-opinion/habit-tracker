@@ -63,6 +63,19 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+    // MigrationTestHelper reads the exported schemas from assets. Under Robolectric, unit tests
+    // see the debug variant's merged assets rather than the test source set's, so the schemas
+    // are added to debug assets (a few KB in debug APKs only; release builds don't include them).
+    sourceSets.getByName("debug").assets.srcDir("$projectDir/schemas")
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 // Fails release packaging (assembleRelease, bundleRelease, ...) when the release key isn't
@@ -124,4 +137,7 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 }

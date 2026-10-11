@@ -1,6 +1,7 @@
 package com.janreins.habitude.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -60,6 +61,19 @@ class NotesAndAutoBackupTest {
     @Test
     fun autoBackupNamesSortByDate() {
         assertEquals("habitude-auto-2026-10-08.json", Backup.autoFileName(today))
+    }
+
+    @Test
+    fun temporaryBackupsAreRecognizedAndExcludedFromRetention() {
+        val temp = Backup.autoTempFileName(Backup.autoFileName(today))
+        assertEquals("habitude-auto-2026-10-08.json.partial", temp)
+        assertTrue(Backup.isAutoTempFileName(temp))
+        assertTrue(Backup.isAutoTempFileName("habitude-auto-2026-10-08.json (1).partial"))
+        assertFalse(Backup.isAutoTempFileName(Backup.autoFileName(today)))
+        assertFalse(Backup.isAutoTempFileName("habitude-backup-2026-10-08.json.partial"))
+        assertFalse(Backup.isAutoTempFileName("holiday.partial"))
+        assertFalse(Backup.isAutoTempFileName("habitude-auto-2026-10-08.json.partial.json"))
+        assertTrue(Backup.autoBackupsToDelete(listOf(temp), keep = 0).isEmpty())
     }
 
     @Test

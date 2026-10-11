@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(
     entities = [HabitEntity::class, EntryEntity::class, PastScheduleEntity::class, DayCountEntity::class, NoteEntity::class],
     version = 7,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class HabitudeDatabase : RoomDatabase() {
     abstract fun habitDao(): HabitDao
@@ -77,9 +77,12 @@ abstract class HabitudeDatabase : RoomDatabase() {
             }
         }
 
+        /** All supported upgrades, also used by the migration tests. */
+        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+
         fun create(context: Context): HabitudeDatabase =
             Room.databaseBuilder(context, HabitudeDatabase::class.java, "habitude.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(*ALL_MIGRATIONS)
                 .build()
     }
 }

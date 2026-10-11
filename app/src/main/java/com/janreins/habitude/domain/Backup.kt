@@ -76,6 +76,12 @@ object Backup {
     /** The file name for an automatic backup made on [day]. Sorts by date. */
     fun autoFileName(day: LocalDate): String = "$AUTO_PREFIX$day.json"
 
+    /** Temporary documents cannot be mistaken for finished backups by retention. */
+    fun autoTempFileName(name: String): String = "$name.partial"
+
+    fun isAutoTempFileName(name: String): Boolean =
+        name.startsWith(AUTO_PREFIX) && name.endsWith(".partial")
+
     /**
      * Of the file names in the backup folder, the automatic backups to delete so only the
      * newest [keep] remain. Anything else in the folder is never touched.
