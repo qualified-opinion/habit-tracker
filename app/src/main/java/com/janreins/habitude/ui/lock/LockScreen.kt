@@ -1,6 +1,7 @@
 package com.janreins.habitude.ui.lock
 
 import android.app.Activity
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -26,29 +28,37 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.janreins.habitude.domain.Pin
+import com.janreins.habitude.domain.pinCooldown
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
  * Covers the whole app until the right PIN is entered. [initialFailures] and
- * [initialLockedUntil] (wall-clock ms) come from storage, and every attempt is reported through
- * [onAttempt], so closing the app doesn't reset the wait after too many wrong tries.
+ * [initialDeadlineElapsed] (milliseconds since boot) come from storage. Every attempt is reported
+ * through [onAttempt], so closing the app doesn't reset the wait after too many wrong tries.
  */
 @Composable
 fun LockScreen(
     checkPin: suspend (String) -> Boolean,
     onUnlocked: () -> Unit,
     initialFailures: Int,
-    initialLockedUntil: Long,
-    onAttempt: (failures: Int, lockedUntil: Long) -> Unit,
+    initialDeadlineElapsed: Long,
+    bootCount: Int,
+    onAttempt: (failures: Int, deadlineElapsed: Long, bootCount: Int) -> Unit,
     onUseBiometrics: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var failures by rememberSaveable { mutableIntStateOf(initialFailures) }
-    var waitUntil by rememberSaveable { mutableLongStateOf(initialLockedUntil) }
-    var secondsLeft by rememberSaveable { mutableIntStateOf(0) }
-    var checking by rememberSaveable { mutableStateOf(false) }
+    // Storage already keeps these; restored UI state must not override a repaired reboot wait.
+    var failures by remember { mutableIntStateOf(initialFailures) }
+    var waitUntil by remember { mutableLongStateOf(initialDeadlineElapsed) }
+    // Recompute derived time after recreation; do not restore a stale countdown.
+    var secondsLeft by remember {
+        val remaining = pinCooldown(failures, waitUntil, bootCount, SystemClock.elapsedRealtime(), bootCount).remainingMillis
+        mutableIntStateOf(((remaining + 999) / 1000).toInt())
+    }
+    // The coroutine is cancelled on recreation, so its busy flag must start fresh too.
+    var checking by remember { mutableStateOf(false) }
     var resetKey by rememberSaveable { mutableIntStateOf(0) }
 
     // With fingerprint or face unlock on, ask for it straight away, once each time the lock shows.
@@ -64,10 +74,8 @@ fun LockScreen(
     BackHandler { (context as? Activity)?.moveTaskToBack(true) }
 
     LaunchedEffect(waitUntil) {
-        // Capped at the longest wait this many failures earns, in case the clock was set back.
-        val longest = Pin.lockoutSeconds(failures) * 1000L
         while (true) {
-            val left = (waitUntil - System.currentTimeMillis()).coerceIn(0L, longest)
+            val left = pinCooldown(failures, waitUntil, bootCount, SystemClock.elapsedRealtime(), bootCount).remainingMillis
             secondsLeft = ((left + 999) / 1000).toInt()
             if (secondsLeft == 0) break
             delay(250)
@@ -108,14 +116,15 @@ fun LockScreen(
                             if (ok) {
                                 failures = 0
                                 waitUntil = 0L
-                                onAttempt(0, 0L)
+                                onAttempt(0, 0L, bootCount)
                                 onUnlocked()
                             } else {
                                 failures++
                                 resetKey++
                                 val wait = Pin.lockoutSeconds(failures)
-                                if (wait > 0) waitUntil = System.currentTimeMillis() + wait * 1000L
-                                onAttempt(failures, waitUntil)
+                                waitUntil = if (wait > 0) SystemClock.elapsedRealtime() + wait * 1000L else 0L
+                                secondsLeft = wait
+                                onAttempt(failures, waitUntil, bootCount)
                             }
                         }
                     },

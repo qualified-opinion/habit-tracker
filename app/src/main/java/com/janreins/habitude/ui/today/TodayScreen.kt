@@ -48,6 +48,7 @@ import com.janreins.habitude.domain.Notes
 import com.janreins.habitude.ui.DayClock
 import com.janreins.habitude.ui.greetingFor
 import com.janreins.habitude.ui.screens.EmptyStateCard
+import com.janreins.habitude.ui.lock.LockAwareDialogHost
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -133,33 +134,35 @@ fun TodayScreen(
     confirmSlipFor?.let { id ->
         val name = state.breaking.firstOrNull { it.id == id }?.name.orEmpty()
         var note by rememberSaveable(id) { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { confirmSlipFor = null },
-            title = { Text("Log a slip?") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("This resets your clean run for \"$name\". Be kind to yourself, it's one day.")
-                    // Writing down what led to it helps spot the triggers over time.
-                    OutlinedTextField(
-                        value = note,
-                        onValueChange = { note = it.take(Notes.MAX_LENGTH) },
-                        label = { Text("What led to it? (optional)") },
-                        minLines = 2,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.logSlip(id, note)
-                    confirmSlipFor = null
-                }) { Text("Log slip") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmSlipFor = null }) { Text("Cancel") }
-            },
-        )
+        LockAwareDialogHost {
+            AlertDialog(
+                onDismissRequest = { confirmSlipFor = null },
+                title = { Text("Log a slip?") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("This resets your clean run for \"$name\". Be kind to yourself, it's one day.")
+                        // Writing down what led to it helps spot the triggers over time.
+                        OutlinedTextField(
+                            value = note,
+                            onValueChange = { note = it.take(Notes.MAX_LENGTH) },
+                            label = { Text("What led to it? (optional)") },
+                            minLines = 2,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.logSlip(id, note)
+                        confirmSlipFor = null
+                    }) { Text("Log slip") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmSlipFor = null }) { Text("Cancel") }
+                },
+            )
+        }
     }
 }
 

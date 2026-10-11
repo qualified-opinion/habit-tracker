@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -21,6 +23,7 @@ import com.janreins.habitude.ui.CelebrationHost
 import com.janreins.habitude.ui.DayClock
 import com.janreins.habitude.ui.lock.Biometrics
 import com.janreins.habitude.ui.lock.LockScreen
+import com.janreins.habitude.ui.lock.LocalAppLocked
 import com.janreins.habitude.ui.navigation.HabitudeApp
 import com.janreins.habitude.ui.theme.HabitudeTheme
 import kotlinx.coroutines.Dispatchers
@@ -62,24 +65,24 @@ class MainActivity : FragmentActivity() {
             HabitudeTheme {
                 Box {
                     // The app stays composed underneath so you land back where you were.
-                    HabitudeApp()
+                    CompositionLocalProvider(LocalAppLocked provides (lock.locked == true)) {
+                        HabitudeApp()
+                    }
                     // Milestones wait until the app is unlocked, so they never show over the PIN screen.
                     if (lock.locked == false) CelebrationHost()
                     if (lock.locked == true) {
+                        val cooldown = remember { settings.readPinCooldown() }
                         LockScreen(
                             checkPin = { pin -> withContext(Dispatchers.Default) { settings.checkPin(pin) } },
                             onUnlocked = { lock.locked = false },
                             initialFailures = settings.pinFailures,
-                            initialLockedUntil = settings.pinLockedUntil,
-                            onAttempt = { failures, lockedUntil ->
-                                settings.pinFailures = failures
-                                settings.pinLockedUntil = lockedUntil
-                            },
+                            initialDeadlineElapsed = cooldown.deadlineElapsed,
+                            bootCount = cooldown.bootCount,
+                            onAttempt = settings::savePinCooldown,
                             onUseBiometrics = if (settings.biometricUnlock && Biometrics.available(this@MainActivity)) {
                                 {
                                     Biometrics.prompt(this@MainActivity, "Unlock Habitude") {
-                                        settings.pinFailures = 0
-                                        settings.pinLockedUntil = 0L
+                                        settings.savePinCooldown(0, 0L, cooldown.bootCount)
                                         lock.locked = false
                                     }
                                 }

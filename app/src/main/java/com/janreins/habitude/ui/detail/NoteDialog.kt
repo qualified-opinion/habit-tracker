@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import com.janreins.habitude.domain.Notes
+import com.janreins.habitude.ui.lock.LockAwareDialogHost
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -28,23 +29,25 @@ fun NoteDialog(
     onDismiss: () -> Unit,
 ) {
     var text by rememberSaveable(day) { mutableStateOf(initial) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Note for ${day.format(DateTimeFormatter.ofPattern("EEE d MMM"))}") },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it.take(Notes.MAX_LENGTH) },
-                placeholder = { Text(placeholder) },
-                supportingText = { Text("${text.length} / ${Notes.MAX_LENGTH}", style = MaterialTheme.typography.bodySmall) },
-                minLines = 3,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(text) }) { Text(if (text.isBlank() && initial.isNotEmpty()) "Remove note" else "Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    LockAwareDialogHost {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Note for ${day.format(DateTimeFormatter.ofPattern("EEE d MMM"))}") },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(Notes.MAX_LENGTH) },
+                    placeholder = { Text(placeholder) },
+                    supportingText = { Text("${text.length} / ${Notes.MAX_LENGTH}", style = MaterialTheme.typography.bodySmall) },
+                    minLines = 3,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { onSave(text) }) { Text(if (text.isBlank() && initial.isNotEmpty()) "Remove note" else "Save") }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        )
+    }
 }

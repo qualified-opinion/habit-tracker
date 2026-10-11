@@ -1,10 +1,16 @@
 package com.janreins.habitude.notify
 
 import android.content.Context
+import android.os.SystemClock
+import android.provider.Settings as AndroidSettings
 import com.janreins.habitude.domain.Pin
+import com.janreins.habitude.domain.PinCooldown
+import com.janreins.habitude.domain.pinCooldown
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
 
 /** Small app preferences kept on the phone. */
-class Settings(context: Context) {
+class Settings(private val context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     var eveningNudge: Boolean
@@ -12,6 +18,16 @@ class Settings(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_NUDGE, value).apply()
 
     val hasPin: Boolean get() = prefs.contains(KEY_PIN_HASH)
+
+    /** Keeps a visible widget in step with PIN changes, including an already running widget. */
+    val pinChanges = callbackFlow {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_PIN_HASH) trySend(hasPin)
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        trySend(hasPin)
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
 
     /** Stores a salted hash of [pin], never the PIN itself. */
     fun setPin(pin: String) {
@@ -22,6 +38,8 @@ class Settings(context: Context) {
             .putString(KEY_PIN_HASH, Pin.hash(pin, salt))
             .remove(KEY_PIN_FAILURES)
             .remove(KEY_PIN_LOCKED_UNTIL)
+            .remove(KEY_PIN_DEADLINE_ELAPSED)
+            .remove(KEY_PIN_BOOT_COUNT)
             .apply()
     }
 
@@ -36,10 +54,33 @@ class Settings(context: Context) {
         get() = prefs.getInt(KEY_PIN_FAILURES, 0)
         set(value) = prefs.edit().putInt(KEY_PIN_FAILURES, value).apply()
 
-    /** Wall-clock time (ms) until which PIN entry is paused after too many wrong tries. */
-    var pinLockedUntil: Long
-        get() = prefs.getLong(KEY_PIN_LOCKED_UNTIL, 0L)
-        set(value) = prefs.edit().putLong(KEY_PIN_LOCKED_UNTIL, value).apply()
+    /**
+     * Reads and repairs the elapsed-time wait. An old wall-clock deadline may still represent
+     * a wait, so migrate it by restarting the full wait once when there are at least five failures.
+     */
+    fun readPinCooldown(): PinCooldown {
+        val boot = AndroidSettings.Global.getInt(context.contentResolver, AndroidSettings.Global.BOOT_COUNT, -1)
+        val legacy = prefs.getLong(KEY_PIN_LOCKED_UNTIL, 0L) > 0L
+        val cooldown = pinCooldown(
+            pinFailures,
+            if (legacy) 1L else prefs.getLong(KEY_PIN_DEADLINE_ELAPSED, 0L),
+            if (legacy) Int.MIN_VALUE else prefs.getInt(KEY_PIN_BOOT_COUNT, boot),
+            SystemClock.elapsedRealtime(),
+            boot,
+        )
+        savePinCooldown(pinFailures, cooldown.deadlineElapsed, cooldown.bootCount)
+        return cooldown
+    }
+
+    /** Keeps each attempt and its wait together; zero clears the wait after authentication. */
+    fun savePinCooldown(failures: Int, deadlineElapsed: Long, bootCount: Int) {
+        prefs.edit()
+            .putInt(KEY_PIN_FAILURES, failures)
+            .putLong(KEY_PIN_DEADLINE_ELAPSED, deadlineElapsed)
+            .putInt(KEY_PIN_BOOT_COUNT, bootCount)
+            .remove(KEY_PIN_LOCKED_UNTIL)
+            .apply()
+    }
 
     /** The milestone already celebrated in a habit's current run, so each shows only once. */
     fun celebratedMilestone(habitId: Long): Int = prefs.getInt(KEY_MILESTONE + habitId, 0)
@@ -89,6 +130,8 @@ class Settings(context: Context) {
             .remove(KEY_PIN_HASH)
             .remove(KEY_PIN_FAILURES)
             .remove(KEY_PIN_LOCKED_UNTIL)
+            .remove(KEY_PIN_DEADLINE_ELAPSED)
+            .remove(KEY_PIN_BOOT_COUNT)
             .apply()
     }
 
@@ -97,6 +140,8 @@ class Settings(context: Context) {
         const val KEY_PIN_SALT = "pin_salt"
         const val KEY_PIN_HASH = "pin_hash"
         const val KEY_PIN_FAILURES = "pin_failures"
+        const val KEY_PIN_DEADLINE_ELAPSED = "pin_deadline_elapsed"
+        const val KEY_PIN_BOOT_COUNT = "pin_boot_count"
         const val KEY_PIN_LOCKED_UNTIL = "pin_locked_until"
         const val KEY_MILESTONE = "milestone_"
         const val KEY_BIOMETRIC = "biometric_unlock"
