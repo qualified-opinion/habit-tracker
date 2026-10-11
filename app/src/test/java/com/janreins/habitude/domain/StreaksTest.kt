@@ -88,4 +88,18 @@ class StreaksTest {
         assertEquals(days, Schedule.fromMask(Schedule.toMask(days)))
         assertEquals(everyDay, Schedule.fromMask(0b1111111))
     }
+    @Test
+    fun backdatedTickOnYesterdayExtendsCurrentStreak() {
+        val done = setOf(day(0), day(1))
+        assertEquals(0, Streaks.currentBuildStreak(done, everyDay, day(3)))
+        assertEquals(3, Streaks.currentBuildStreak(done + day(2), everyDay, day(3)))
+    }
+
+    @Test
+    fun backdatedTickFillingAGapJoinsTwoRuns() {
+        val done = setOf(day(0), day(1), day(3), day(4))
+        assertEquals(2, Streaks.currentBuildStreak(done, everyDay, day(5)))
+        assertEquals(5, Streaks.currentBuildStreak(done + day(2), everyDay, day(5)))
+        assertEquals(5, Streaks.bestBuildStreak(done + day(2), everyDay, day(5)))
+    }
 }

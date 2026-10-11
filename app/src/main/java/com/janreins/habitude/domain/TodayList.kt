@@ -2,43 +2,53 @@ package com.janreins.habitude.domain
 
 import java.time.LocalDate
 
-/** How far through today's build habits you are. */
+/** How far through a day's build habits you are. */
 data class DayProgress(val done: Int, val due: Int)
 
-/** What the Today tab shows, and in what order. */
+/** What the Today tab shows for a day, and in what order. */
 object TodayList {
 
-    /** Build habits due today (or done anyway), and how many of those are done. Archived ones don't count. */
-    fun progress(items: List<HabitWithEntries>, today: LocalDate): DayProgress {
-        val builds = items.filter { !it.habit.archived && it.habit.type == HabitType.BUILD }
-        val due = builds.filter { isDueToday(it, today) || today in it.entries }
-        return DayProgress(done = due.count { today in it.entries }, due = due.size)
+    /** Not archived, and already started by [day] (a habit doesn't show on days before it began). */
+    fun visibleOn(item: HabitWithEntries, day: LocalDate): Boolean =
+        !item.habit.archived && !day.isBefore(item.habit.createdOn)
+
+    fun progress(items: List<HabitWithEntries>, today: LocalDate): DayProgress = progress(items, today, today)
+
+    /** Build habits due on [day] (or done anyway), and how many of those are done. */
+    fun progress(items: List<HabitWithEntries>, day: LocalDate, today: LocalDate): DayProgress {
+        val builds = items.filter { visibleOn(it, day) && it.habit.type == HabitType.BUILD }
+        val due = builds.filter { isDueOn(it, day, today) || day in it.entries }
+        return DayProgress(done = due.count { day in it.entries }, due = due.size)
     }
 
+    fun order(items: List<HabitWithEntries>, today: LocalDate): List<HabitWithEntries> = order(items, today, today)
+
     /**
-     * Build habits still to do today first, then the ones done, then rest days, each group
-     * keeping its usual order. Break habits keep their order.
+     * Habits shown on [day]: build habits still to do first, then the ones done, then rest
+     * days, each group keeping its usual order. Break habits keep their order.
      */
-    fun order(items: List<HabitWithEntries>, today: LocalDate): List<HabitWithEntries> =
-        items.sortedBy { item ->
+    fun order(items: List<HabitWithEntries>, day: LocalDate, today: LocalDate): List<HabitWithEntries> =
+        items.filter { visibleOn(it, day) }.sortedBy { item ->
             when {
                 item.habit.type == HabitType.BREAK -> 0
-                today in item.entries -> 1
-                isDueToday(item, today) -> 0
+                day in item.entries -> 1
+                isDueOn(item, day, today) -> 0
                 else -> 2
             }
         }
 
+    fun isDueToday(item: HabitWithEntries, today: LocalDate): Boolean = isDueOn(item, today, today)
+
     /**
-     * Whether a build habit still wants doing today: due on its set days, or for a
-     * times-a-week habit, this week's goal isn't met yet.
+     * Whether a build habit wants doing on [day]: due on that day's schedule, or for a
+     * times-a-week habit, that week's goal (counting every done day up to [today]) isn't met.
      */
-    fun isDueToday(item: HabitWithEntries, today: LocalDate): Boolean {
+    fun isDueOn(item: HabitWithEntries, day: LocalDate, today: LocalDate): Boolean {
         val target = item.habit.weeklyTarget
         return if (item.habit.isWeekly && target != null) {
-            Streaks.doneInWeek(item.entries, today, today) < target
+            Streaks.doneInWeek(item.entries, day, today) < target
         } else {
-            item.habit.isDue(today)
+            item.habit.isDue(day)
         }
     }
 }

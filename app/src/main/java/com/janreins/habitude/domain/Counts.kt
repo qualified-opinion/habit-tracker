@@ -17,6 +17,10 @@ object Counts {
     fun next(stored: Int?, ticked: Boolean, target: Int, delta: Int): Int =
         (current(stored, ticked, target) + delta).coerceIn(0, MAX_COUNT)
 
+    /** Past done days stay done until explicitly cleared; today follows the current goal. */
+    fun doneAfterEdit(wasDone: Boolean, newCount: Int, target: Int, isPastDay: Boolean): Boolean =
+        if (isPastDay && wasDone) newCount > 0 else newCount >= target
+
     /** Whether [count] reaches the day's goal. */
     fun isDone(count: Int, target: Int): Boolean = count >= target
 }

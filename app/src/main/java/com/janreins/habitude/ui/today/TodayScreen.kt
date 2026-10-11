@@ -19,16 +19,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Spa
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +43,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,10 +54,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.janreins.habitude.domain.DayProgress
 import com.janreins.habitude.domain.HabitType
 import com.janreins.habitude.domain.Notes
+import com.janreins.habitude.domain.PastDays
 import com.janreins.habitude.ui.DayClock
 import com.janreins.habitude.ui.greetingFor
 import com.janreins.habitude.ui.screens.EmptyStateCard
 import com.janreins.habitude.ui.lock.LockAwareDialogHost
+import com.janreins.habitude.ui.lock.LocalAppLocked
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -59,6 +71,9 @@ fun TodayScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val now by DayClock.now.collectAsStateWithLifecycle()
+    val locked = LocalAppLocked.current
+    LaunchedEffect(locked) { if (locked) viewModel.backToToday() }
+    var confirmSlipDay by rememberSaveable { mutableStateOf<LocalDate?>(null) }
     var confirmSlipFor by rememberSaveable { mutableStateOf<Long?>(null) }
 
     Box(Modifier.fillMaxSize()) {
@@ -69,15 +84,42 @@ fun TodayScreen(
             item {
                 Column(Modifier.padding(bottom = 20.dp)) {
                     Text(
-                        now.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")).uppercase(),
+                        (state.day ?: now.toLocalDate()).format(DateTimeFormatter.ofPattern("EEEE, d MMMM")).uppercase(),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(onClick = viewModel::previousDay, enabled = state.canGoBack, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "Previous day")
+                        }
+                        Text(
+                            state.label,
+                            modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+                            textAlign = TextAlign.Center,
+                        )
+                        IconButton(onClick = viewModel::nextDay, enabled = state.canGoForward, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Next day")
+                        }
+                    }
                     Text(greetingFor(now.hour), style = MaterialTheme.typography.displaySmall)
                     if (state.progress.due > 0) {
                         Spacer(Modifier.height(16.dp))
-                        DayProgressLine(state.progress)
+                        DayProgressLine(state.progress, state.day, state.isToday)
+                    }
+                }
+            }
+
+            if (!state.isToday) {
+                item {
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                            Text("Viewing ${state.day?.format(DateTimeFormatter.ofPattern("EEEE, d MMMM"))}")
+                            TextButton(onClick = viewModel::backToToday) { Text("Back to today") }
+                        }
                     }
                 }
             }
@@ -94,10 +136,10 @@ fun TodayScreen(
                         // Slides into place when ticking moves it between to-do and done.
                         modifier = Modifier.animateItem(),
                         onOpen = { onOpenHabit(card.id) },
-                        onToggleDone = { viewModel.setLoggedToday(card.id, !card.loggedToday) },
+                        onToggleDone = { viewModel.setLogged(card.id, card.day, !card.loggedOnDay) },
                         onSlip = {},
                         onUndoSlip = {},
-                        onAddCount = { delta -> viewModel.addCount(card.id, delta) },
+                        onAddCount = { delta -> viewModel.addCount(card.id, card.day, delta) },
                     )
                 }
             }
@@ -110,8 +152,11 @@ fun TodayScreen(
                         modifier = Modifier.animateItem(),
                         onOpen = { onOpenHabit(card.id) },
                         onToggleDone = {},
-                        onSlip = { confirmSlipFor = card.id },
-                        onUndoSlip = { viewModel.setLoggedToday(card.id, false) },
+                        onSlip = {
+                            confirmSlipFor = card.id
+                            confirmSlipDay = card.day
+                        },
+                        onUndoSlip = { viewModel.setLogged(card.id, card.day, false) },
                     )
                 }
             }
@@ -154,7 +199,7 @@ fun TodayScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        viewModel.logSlip(id, note)
+                        confirmSlipDay?.let { viewModel.logSlip(id, it, note) }
                         confirmSlipFor = null
                     }) { Text("Log slip") }
                 },
@@ -167,11 +212,14 @@ fun TodayScreen(
 }
 
 @Composable
-private fun DayProgressLine(progress: DayProgress) {
+internal fun DayProgressLine(progress: DayProgress, day: LocalDate? = null, isToday: Boolean = true) {
     val allDone = progress.done == progress.due
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             when {
+                !isToday && allDone && progress.due == 1 -> "Done on ${day?.let(PastDays::date)} 🎉"
+                !isToday && allDone -> "All ${progress.due} done on ${day?.let(PastDays::date)} 🎉"
+                !isToday -> "${progress.done} of ${progress.due} done on ${day?.let(PastDays::date)}"
                 allDone && progress.due == 1 -> "Done for today 🎉"
                 allDone -> "All ${progress.due} done today 🎉"
                 else -> "${progress.done} of ${progress.due} done today"

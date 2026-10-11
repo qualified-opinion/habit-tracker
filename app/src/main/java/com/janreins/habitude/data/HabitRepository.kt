@@ -83,12 +83,13 @@ class HabitRepository(private val db: HabitudeDatabase) {
      * Adds [delta] (negative to take some off) to a counted habit's count for [day], and marks
      * the day done or not done to match. Read and written in one go, so quick taps all count.
      */
-    suspend fun addCount(habitId: Long, day: LocalDate, delta: Int) {
+    suspend fun addCount(habitId: Long, day: LocalDate, delta: Int, today: LocalDate = LocalDate.now()) {
         db.withTransaction {
             val target = dao.getHabit(habitId)?.dailyTarget ?: return@withTransaction
             val epochDay = day.toEpochDay()
-            val count = Counts.next(dao.getCount(habitId, epochDay), dao.hasEntry(habitId, epochDay), target, delta)
-            writeCount(habitId, epochDay, count, target)
+            val wasDone = dao.hasEntry(habitId, epochDay)
+            val count = Counts.next(dao.getCount(habitId, epochDay), wasDone, target, delta)
+            writeCount(habitId, epochDay, count, target, wasDone, day.isBefore(today))
         }
     }
 
@@ -110,10 +111,10 @@ class HabitRepository(private val db: HabitudeDatabase) {
         if (note.isEmpty()) dao.deleteNote(habitId, day.toEpochDay()) else dao.upsertNote(NoteEntity(habitId, day.toEpochDay(), note))
     }
 
-    private suspend fun writeCount(habitId: Long, epochDay: Long, count: Int, target: Int) {
+    private suspend fun writeCount(habitId: Long, epochDay: Long, count: Int, target: Int, wasDone: Boolean = false, isPastDay: Boolean = false) {
         if (count > 0) dao.upsertCount(DayCountEntity(habitId, epochDay, count)) else dao.deleteCount(habitId, epochDay)
         val entry = EntryEntity(habitId, epochDay)
-        if (Counts.isDone(count, target)) dao.insertEntry(entry) else dao.deleteEntry(entry)
+        if (Counts.doneAfterEdit(wasDone, count, target, isPastDay)) dao.insertEntry(entry) else dao.deleteEntry(entry)
     }
 }
 
