@@ -19,7 +19,9 @@ import java.time.LocalDate
 object Notifications {
     const val CHANNEL_REMINDERS = "reminders"
     const val CHANNEL_NUDGES = "nudges"
+    const val CHANNEL_BACKUPS = "backups"
     const val NUDGE_NOTIFICATION_ID = Int.MAX_VALUE
+    const val BACKUP_NOTIFICATION_ID = Int.MAX_VALUE - 1
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -30,6 +32,9 @@ object Notifications {
                 },
                 NotificationChannel(CHANNEL_NUDGES, "Streak check", NotificationManager.IMPORTANCE_DEFAULT).apply {
                     description = "An evening heads-up when a streak is about to break"
+                },
+                NotificationChannel(CHANNEL_BACKUPS, "Backups", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "Problems with the weekly backup folder"
                 },
             ),
         )
@@ -72,6 +77,14 @@ object Notifications {
 
     fun showNudge(context: Context, text: ReminderText) {
         post(context, NUDGE_NOTIFICATION_ID, base(context, CHANNEL_NUDGES, text))
+    }
+
+    fun showBackupProblem(context: Context) {
+        val text = ReminderText(
+            "Weekly backups have stopped",
+            "Habitude lost access to the backup folder. Pick it again in Settings to keep weekly backups going.",
+        )
+        post(context, BACKUP_NOTIFICATION_ID, base(context, CHANNEL_BACKUPS, text))
     }
 
     fun cancel(context: Context, id: Int) = NotificationManagerCompat.from(context).cancel(id)

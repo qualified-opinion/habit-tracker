@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- Room testing must match the app's required Room 2.6.1 version. -->
+    <issue id="GradleDependency">
+        <ignore regexp="A newer version of androidx\.room:room-testing .*" />
+    </issue>
+</lint>

@@ -50,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableLongStateOf
 import com.janreins.habitude.HabitudeApplication
 import com.janreins.habitude.backup.AutoBackup
+import com.janreins.habitude.backup.SafetyBackup
 import com.janreins.habitude.domain.Backup
 import com.janreins.habitude.domain.BackupContents
 import com.janreins.habitude.domain.BackupException
@@ -333,7 +334,47 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<BackupContents?>(null) }
     var currentCount by remember { mutableIntStateOf(0) }
+    var restoring by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var safetyTime by remember { mutableLongStateOf(SafetyBackup.madeAt(context.filesDir)) }
     val toast = { text: String -> Toast.makeText(context, text, Toast.LENGTH_LONG).show() }
+
+    suspend fun replace(contents: BackupContents, restore: Boolean) {
+        try {
+            val current = app.repository.snapshot()
+            val keptPrevious = !restore && current.isNotEmpty()
+            if (keptPrevious) {
+                val saved = runCatching {
+                    withContext(Dispatchers.IO) {
+                        SafetyBackup.write(
+                            context.filesDir,
+                            Backup.export(current, app.settings.eveningNudge, LocalDateTime.now()),
+                        )
+                    }
+                }
+                if (saved.isFailure) {
+                    toast("Couldn't save your previous data. Import stopped; nothing was changed.")
+                    return
+                }
+                safetyTime = SafetyBackup.madeAt(context.filesDir)
+            }
+            val done = runCatching { app.repository.replaceAll(contents.habits) }
+            if (done.isFailure) {
+                toast("${if (restore) "Restore" else "Import"} failed. Nothing was changed.")
+                return
+            }
+            contents.eveningNudge?.let {
+                app.settings.eveningNudge = it
+                onNudgeChanged(it)
+            }
+            current.forEach { app.reminders.cancel(it.habit.id) }
+            app.rescheduleReminders()
+            val message = "${if (restore) "Restored" else "Imported"} ${plural(contents.habits.size, "habit")}."
+            toast(if (keptPrevious) "$message Your previous data is saved; restore it from Settings → Backup." else message)
+        } finally {
+            busy = false
+        }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -357,6 +398,7 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
                 }
                 val contents = withContext(Dispatchers.Default) { Backup.parse(text) }
                 currentCount = app.repository.snapshot().size
+                restoring = false
                 pending = contents
             } catch (e: BackupException) {
                 toast(e.message.orEmpty())
@@ -374,19 +416,47 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilledTonalButton(onClick = { exportLauncher.launch("habitude-backup-${LocalDate.now()}.json") }) {
+            FilledTonalButton(onClick = { exportLauncher.launch("habitude-backup-${LocalDate.now()}.json") }, enabled = !busy) {
                 Text("Export")
             }
-            OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }) {
+            OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }, enabled = !busy) {
                 Text("Import")
             }
+        }
+        if (safetyTime != 0L) {
+            val made = Instant.ofEpochMilli(safetyTime).atZone(ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))
+            Text("Previous data saved $made.", style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(
+                enabled = !busy,
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        try {
+                            val contents = withContext(Dispatchers.IO) { Backup.parse(SafetyBackup.read(context.filesDir)) }
+                            currentCount = app.repository.snapshot().size
+                            restoring = true
+                            pending = contents
+                        } catch (e: BackupException) {
+                            toast(e.message.orEmpty())
+                        } catch (e: Exception) {
+                            toast("Couldn't read the previous data.")
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+            ) { Text("Restore data from before the last import") }
         }
     }
 
     AutoBackupCard(app)
 
     pending?.let { contents ->
-        val made = runCatching {
+        val made = if (restoring) {
+            Instant.ofEpochMilli(safetyTime).atZone(ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))
+        } else runCatching {
             LocalDateTime.parse(contents.exportedAt).format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))
         }.getOrDefault(contents.exportedAt)
         AlertDialog(
@@ -394,28 +464,23 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
             title = { Text("Replace your data?") },
             text = {
                 Text(
-                    "This backup from $made has ${plural(contents.habits.size, "habit")}. Importing replaces " +
-                        "the ${plural(currentCount, "habit")} on this phone and all their history.",
+                    if (restoring) {
+                        "This restores your data as it was just before the import on $made. " +
+                            "It has ${plural(contents.habits.size, "habit")} and replaces " +
+                            "the ${plural(currentCount, "habit")} on this phone and all their history."
+                    } else {
+                        "This backup from $made has ${plural(contents.habits.size, "habit")}. Importing replaces " +
+                            "the ${plural(currentCount, "habit")} on this phone and all their history."
+                    },
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = !busy, onClick = {
+                    if (busy) return@TextButton
+                    val restore = restoring
                     pending = null
-                    scope.launch {
-                        val oldIds = app.repository.snapshot().map { it.habit.id }
-                        val done = runCatching { app.repository.replaceAll(contents.habits) }
-                        if (done.isFailure) {
-                            toast("Import failed. Nothing was changed.")
-                            return@launch
-                        }
-                        contents.eveningNudge?.let {
-                            app.settings.eveningNudge = it
-                            onNudgeChanged(it)
-                        }
-                        oldIds.forEach { app.reminders.cancel(it) }
-                        app.rescheduleReminders()
-                        toast("Imported ${plural(contents.habits.size, "habit")}.")
-                    }
+                    busy = true
+                    scope.launch { replace(contents, restore) }
                 }) { Text("Replace") }
             },
             dismissButton = { TextButton(onClick = { pending = null }) { Text("Cancel") } },
@@ -432,6 +497,7 @@ private fun AutoBackupCard(app: HabitudeApplication) {
     var folderName by remember { mutableStateOf<String?>(null) }
     var last by remember { mutableLongStateOf(app.settings.lastAutoBackup) }
     var failed by remember { mutableStateOf(app.settings.autoBackupFailed) }
+    var accessLost by remember { mutableStateOf(app.settings.autoBackupAccessLost) }
     var busy by remember { mutableStateOf(false) }
     val toast = { text: String -> Toast.makeText(context, text, Toast.LENGTH_LONG).show() }
 
@@ -442,16 +508,23 @@ private fun AutoBackupCard(app: HabitudeApplication) {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         last = app.settings.lastAutoBackup
         failed = app.settings.autoBackupFailed
+        accessLost = app.settings.autoBackupAccessLost
     }
 
     fun backUpNow() {
         busy = true
         scope.launch {
-            val ok = withContext(Dispatchers.IO) { AutoBackup.runNow(context) }
+            val outcome = withContext(Dispatchers.IO) { AutoBackup.runNow(context) }
             busy = false
             last = app.settings.lastAutoBackup
-            failed = !ok
-            toast(if (ok) "Backup saved." else "Couldn't save to that folder. Try picking it again.")
+            failed = app.settings.autoBackupFailed
+            accessLost = app.settings.autoBackupAccessLost
+            toast(when (outcome) {
+                AutoBackup.Outcome.Success -> "Backup saved."
+                AutoBackup.Outcome.NoFolder -> "Pick a backup folder first."
+                AutoBackup.Outcome.AccessLost -> "Habitude lost access to the backup folder. Pick it again."
+                is AutoBackup.Outcome.Failed -> "Couldn't save the backup. Try again later."
+            })
         }
     }
 
@@ -464,6 +537,9 @@ private fun AutoBackupCard(app: HabitudeApplication) {
         }
         folder?.takeIf { it != uri }?.let { AutoBackup.releaseAccess(context, it) }
         app.settings.autoBackupFolder = uri.toString()
+        app.settings.autoBackupAccessLost = false
+        accessLost = false
+        Notifications.cancel(context, Notifications.BACKUP_NOTIFICATION_ID)
         folder = uri
         AutoBackup.schedule(context, true)
         backUpNow()
@@ -488,6 +564,9 @@ private fun AutoBackupCard(app: HabitudeApplication) {
                         folder?.let { AutoBackup.releaseAccess(context, it) }
                         app.settings.autoBackupFolder = null
                         app.settings.autoBackupFailed = false
+                        app.settings.autoBackupAccessLost = false
+                        Notifications.cancel(context, Notifications.BACKUP_NOTIFICATION_ID)
+                        accessLost = false
                         AutoBackup.schedule(context, false)
                         folder = null
                         failed = false
@@ -507,9 +586,13 @@ private fun AutoBackupCard(app: HabitudeApplication) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (failed) {
+            if (accessLost || failed) {
                 Text(
-                    "The last backup couldn't be saved. The folder may have moved; pick it again.",
+                    if (accessLost) {
+                        "Habitude lost access to the backup folder. Pick it again to keep weekly backups going."
+                    } else {
+                        "The last backup couldn't be saved. Try again later."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )

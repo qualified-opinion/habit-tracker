@@ -1,6 +1,8 @@
 package com.janreins.habitude
 
 import android.app.Application
+import android.net.Uri
+import com.janreins.habitude.backup.AutoBackup
 import com.janreins.habitude.data.HabitRepository
 import com.janreins.habitude.data.HabitudeDatabase
 import com.janreins.habitude.notify.Notifications
@@ -26,6 +28,14 @@ class HabitudeApplication : Application() {
         super.onCreate()
         Notifications.createChannels(this)
         appScope.launch { rescheduleReminders() }
+        appScope.launch {
+            settings.autoBackupFolder?.let { folder ->
+                if (!AutoBackup.hasWriteAccess(this@HabitudeApplication, Uri.parse(folder))) {
+                    AutoBackup.markAccessLost(this@HabitudeApplication)
+                }
+                AutoBackup.schedule(this@HabitudeApplication, true)
+            }
+        }
         // Keep home-screen widgets in step with whatever changes in the app.
         appScope.launch {
             repository.habits.drop(1).collect {
