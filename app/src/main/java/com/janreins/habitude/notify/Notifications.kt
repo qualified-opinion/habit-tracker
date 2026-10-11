@@ -1,6 +1,7 @@
 package com.janreins.habitude.notify
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -60,7 +61,21 @@ object Notifications {
         offerDone: Boolean,
         doneLabel: String = "Done ✓",
     ) {
+        post(context, habitId.toInt(), buildReminder(context, habitId, day, text, offerDone, Settings(context).hasPin, doneLabel))
+    }
+
+    /** Builds a reminder without posting it, applying privacy and action authentication together. */
+    internal fun buildReminder(
+        context: Context,
+        habitId: Long,
+        day: LocalDate,
+        text: ReminderText,
+        offerDone: Boolean,
+        locked: Boolean,
+        doneLabel: String = "Done ✓",
+    ): Notification {
         val builder = base(context, CHANNEL_REMINDERS, text)
+        protect(context, builder, CHANNEL_REMINDERS, locked, "A habit reminder")
         if (offerDone) {
             val done = PendingIntent.getBroadcast(
                 context,
@@ -70,13 +85,24 @@ object Notifications {
                     .putExtra(EXTRA_EPOCH_DAY, day.toEpochDay()),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            builder.addAction(R.drawable.ic_notification, doneLabel, done)
+            builder.addAction(
+                NotificationCompat.Action.Builder(R.drawable.ic_notification, doneLabel, done)
+                    .setAuthenticationRequired(locked)
+                    .build(),
+            )
         }
-        post(context, habitId.toInt(), builder)
+        return builder.build()
     }
 
     fun showNudge(context: Context, text: ReminderText) {
-        post(context, NUDGE_NOTIFICATION_ID, base(context, CHANNEL_NUDGES, text))
+        post(context, NUDGE_NOTIFICATION_ID, buildNudge(context, text, Settings(context).hasPin))
+    }
+
+    /** Builds the evening check without posting it, hiding habit details when a PIN is set. */
+    internal fun buildNudge(context: Context, text: ReminderText, locked: Boolean): Notification {
+        val builder = base(context, CHANNEL_NUDGES, text)
+        protect(context, builder, CHANNEL_NUDGES, locked, "A streak check")
+        return builder.build()
     }
 
     fun showBackupProblem(context: Context) {
@@ -84,7 +110,7 @@ object Notifications {
             "Weekly backups have stopped",
             "Habitude lost access to the backup folder. Pick it again in Settings to keep weekly backups going.",
         )
-        post(context, BACKUP_NOTIFICATION_ID, base(context, CHANNEL_BACKUPS, text))
+        post(context, BACKUP_NOTIFICATION_ID, base(context, CHANNEL_BACKUPS, text).build())
     }
 
     fun cancel(context: Context, id: Int) = NotificationManagerCompat.from(context).cancel(id)
@@ -106,10 +132,26 @@ object Notifications {
             .setAutoCancel(true)
     }
 
-    private fun post(context: Context, id: Int, builder: NotificationCompat.Builder) {
+    private fun protect(
+        context: Context,
+        builder: NotificationCompat.Builder,
+        channel: String,
+        locked: Boolean,
+        publicText: String,
+    ) {
+        if (!locked) return
+        builder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                base(context, channel, ReminderText("Habitude", publicText))
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                    .build(),
+            )
+    }
+
+    private fun post(context: Context, id: Int, notification: Notification) {
         if (!canPost(context)) return
         try {
-            NotificationManagerCompat.from(context).notify(id, builder.build())
+            NotificationManagerCompat.from(context).notify(id, notification)
         } catch (_: SecurityException) {
             // Permission was revoked between the check and the post.
         }

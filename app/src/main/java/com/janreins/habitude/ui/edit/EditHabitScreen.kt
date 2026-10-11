@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -59,6 +60,8 @@ import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material3.Switch
 import androidx.compose.ui.platform.LocalContext
 import com.janreins.habitude.ui.rememberNotificationPermissionRequest
+import com.janreins.habitude.ui.lock.LockAwareDialogHost
+import com.janreins.habitude.ui.lock.LockAwarePlatformDialog
 import java.time.DayOfWeek
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -262,37 +265,41 @@ fun EditHabitScreen(
     }
 
     if (confirmDiscard) {
-        AlertDialog(
-            onDismissRequest = { confirmDiscard = false },
-            title = { Text("Discard changes?") },
-            text = { Text("What you changed here won't be saved.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDiscard = false
-                    onDone()
-                }) { Text("Discard") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") }
-            },
-        )
+        LockAwareDialogHost {
+            AlertDialog(
+                onDismissRequest = { confirmDiscard = false },
+                title = { Text("Discard changes?") },
+                text = { Text("What you changed here won't be saved.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmDiscard = false
+                        onDone()
+                    }) { Text("Discard") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") }
+                },
+            )
+        }
     }
 
     if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete \"${state.name}\"?") },
-            text = { Text("Its whole history goes with it. This can't be undone.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    viewModel.delete(onDeleted)
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("Keep it") }
-            },
-        )
+        LockAwareDialogHost {
+            AlertDialog(
+                onDismissRequest = { confirmDelete = false },
+                title = { Text("Delete \"${state.name}\"?") },
+                text = { Text("Its whole history goes with it. This can't be undone.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmDelete = false
+                        viewModel.delete(onDeleted)
+                    }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDelete = false }) { Text("Keep it") }
+                },
+            )
+        }
     }
 }
 
@@ -300,23 +307,28 @@ fun EditHabitScreen(
 private fun ReminderRow(minutes: Int?, onChange: (Int?) -> Unit) {
     val context = LocalContext.current
     val askPermission = rememberNotificationPermissionRequest()
-    val pickTime = { initial: Int ->
-        TimePickerDialog(
-            context,
-            { _, hour, minute ->
-                onChange(hour * 60 + minute)
-                askPermission()
-            },
-            initial / 60,
-            initial % 60,
-            DateFormat.is24HourFormat(context),
-        ).show()
+    var picking by remember { mutableStateOf<Int?>(null) }
+    picking?.let { initial ->
+        LockAwarePlatformDialog(onDismiss = { picking = null }) { canAct ->
+            TimePickerDialog(
+                context,
+                { _, hour, minute ->
+                    if (canAct()) {
+                        onChange(hour * 60 + minute)
+                        askPermission()
+                    }
+                },
+                initial / 60,
+                initial % 60,
+                DateFormat.is24HourFormat(context),
+            )
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FieldLabel("Reminder")
         Surface(
-            onClick = { pickTime(minutes ?: DEFAULT_REMINDER) },
+            onClick = { picking = minutes ?: DEFAULT_REMINDER },
             shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
@@ -337,7 +349,7 @@ private fun ReminderRow(minutes: Int?, onChange: (Int?) -> Unit) {
                 )
                 Switch(
                     checked = minutes != null,
-                    onCheckedChange = { on -> if (on) pickTime(DEFAULT_REMINDER) else onChange(null) },
+                    onCheckedChange = { on -> if (on) picking = DEFAULT_REMINDER else onChange(null) },
                 )
             }
         }
@@ -408,20 +420,25 @@ private fun DailyTargetRow(times: Int, onChange: (Int) -> Unit) {
 @Composable
 private fun CleanSinceRow(day: LocalDate, onChange: (LocalDate) -> Unit) {
     val context = LocalContext.current
-    val pickDay = {
-        DatePickerDialog(
-            context,
-            { _, year, month, dayOfMonth -> onChange(LocalDate.of(year, month + 1, dayOfMonth)) },
-            day.year,
-            day.monthValue - 1,
-            day.dayOfMonth,
-        ).apply { datePicker.maxDate = System.currentTimeMillis() }.show()
+    var picking by remember { mutableStateOf(false) }
+    if (picking) {
+        LockAwarePlatformDialog(onDismiss = { picking = false }) { canAct ->
+            DatePickerDialog(
+                context,
+                { _, year, month, dayOfMonth ->
+                    if (canAct()) onChange(LocalDate.of(year, month + 1, dayOfMonth))
+                },
+                day.year,
+                day.monthValue - 1,
+                day.dayOfMonth,
+            ).apply { datePicker.maxDate = System.currentTimeMillis() }
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FieldLabel("Clean since")
         Surface(
-            onClick = pickDay,
+            onClick = { picking = true },
             shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {

@@ -58,8 +58,10 @@ import com.janreins.habitude.notify.Notifications
 import com.janreins.habitude.ui.lock.Biometrics
 import com.janreins.habitude.ui.lock.PinPad
 import com.janreins.habitude.ui.lock.findFragmentActivity
+import com.janreins.habitude.ui.lock.LockAwareDialogHost
 import com.janreins.habitude.ui.plural
 import com.janreins.habitude.ui.rememberNotificationPermissionRequest
+import com.janreins.habitude.widget.HabitWidget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -209,6 +211,7 @@ private fun AppLockCard(app: HabitudeApplication) {
                         busy = false
                         hasPin = true
                         step = null
+                        HabitWidget.refresh(context)
                         Toast.makeText(context, "PIN set. Habitude will ask for it when you open the app.", Toast.LENGTH_LONG).show()
                     }
                 } else {
@@ -229,6 +232,7 @@ private fun AppLockCard(app: HabitudeApplication) {
                             hasPin = false
                             biometric = false
                             step = null
+                            HabitWidget.refresh(context)
                             Toast.makeText(context, "App lock is off.", Toast.LENGTH_SHORT).show()
                         }
                         else -> start(PinStep.Choose)
@@ -289,39 +293,41 @@ private fun AppLockCard(app: HabitudeApplication) {
     }
 
     step?.let { current ->
-        Dialog(
-            onDismissRequest = { step = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column(
-                    Modifier
-                        .systemBarsPadding()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Row(Modifier.fillMaxWidth()) {
-                        IconButton(onClick = { step = null }) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Cancel")
+        LockAwareDialogHost {
+            Dialog(
+                onDismissRequest = { step = null },
+                properties = DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    Column(
+                        Modifier
+                            .systemBarsPadding()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Row(Modifier.fillMaxWidth()) {
+                            IconButton(onClick = { step = null }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Cancel")
+                            }
                         }
+                        Spacer(Modifier.height(24.dp))
+                        PinPad(
+                            title = when (current) {
+                                PinStep.VerifyToDisable, PinStep.VerifyToChange -> "Enter your current PIN"
+                                PinStep.Choose -> "Choose a 6-digit PIN"
+                                PinStep.Confirm -> "Enter it once more"
+                            },
+                            message = error ?: if (current == PinStep.Choose) {
+                                "If you forget it, the only way back in erases your habits. Export a backup first."
+                            } else {
+                                null
+                            },
+                            isError = error != null,
+                            enabled = !busy,
+                            resetKey = resetKey,
+                            onComplete = ::onPin,
+                        )
                     }
-                    Spacer(Modifier.height(24.dp))
-                    PinPad(
-                        title = when (current) {
-                            PinStep.VerifyToDisable, PinStep.VerifyToChange -> "Enter your current PIN"
-                            PinStep.Choose -> "Choose a 6-digit PIN"
-                            PinStep.Confirm -> "Enter it once more"
-                        },
-                        message = error ?: if (current == PinStep.Choose) {
-                            "If you forget it, the only way back in erases your habits. Export a backup first."
-                        } else {
-                            null
-                        },
-                        isError = error != null,
-                        enabled = !busy,
-                        resetKey = resetKey,
-                        onComplete = ::onPin,
-                    )
                 }
             }
         }
@@ -459,32 +465,34 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
         } else runCatching {
             LocalDateTime.parse(contents.exportedAt).format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))
         }.getOrDefault(contents.exportedAt)
-        AlertDialog(
-            onDismissRequest = { pending = null },
-            title = { Text("Replace your data?") },
-            text = {
-                Text(
-                    if (restoring) {
-                        "This restores your data as it was just before the import on $made. " +
-                            "It has ${plural(contents.habits.size, "habit")} and replaces " +
-                            "the ${plural(currentCount, "habit")} on this phone and all their history."
-                    } else {
-                        "This backup from $made has ${plural(contents.habits.size, "habit")}. Importing replaces " +
-                            "the ${plural(currentCount, "habit")} on this phone and all their history."
-                    },
-                )
-            },
-            confirmButton = {
-                TextButton(enabled = !busy, onClick = {
-                    if (busy) return@TextButton
-                    val restore = restoring
-                    pending = null
-                    busy = true
-                    scope.launch { replace(contents, restore) }
-                }) { Text("Replace") }
-            },
-            dismissButton = { TextButton(onClick = { pending = null }) { Text("Cancel") } },
-        )
+        LockAwareDialogHost {
+            AlertDialog(
+                onDismissRequest = { pending = null },
+                title = { Text("Replace your data?") },
+                text = {
+                    Text(
+                        if (restoring) {
+                            "This restores your data as it was just before the import on $made. " +
+                                "It has ${plural(contents.habits.size, "habit")} and replaces " +
+                                "the ${plural(currentCount, "habit")} on this phone and all their history."
+                        } else {
+                            "This backup from $made has ${plural(contents.habits.size, "habit")}. Importing replaces " +
+                                "the ${plural(currentCount, "habit")} on this phone and all their history."
+                        },
+                    )
+                },
+                confirmButton = {
+                    TextButton(enabled = !busy, onClick = {
+                        if (busy) return@TextButton
+                        val restore = restoring
+                        pending = null
+                        busy = true
+                        scope.launch { replace(contents, restore) }
+                    }) { Text("Replace") }
+                },
+                dismissButton = { TextButton(onClick = { pending = null }) { Text("Cancel") } },
+            )
+        }
     }
 }
 

@@ -40,6 +40,8 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import com.janreins.habitude.HabitudeApplication
 import com.janreins.habitude.MainActivity
+import com.janreins.habitude.domain.widgetHabits
+import com.janreins.habitude.notify.Settings
 import com.janreins.habitude.domain.HabitType
 import com.janreins.habitude.domain.HabitWithEntries
 import com.janreins.habitude.domain.TodayList
@@ -57,12 +59,15 @@ private val HabitIdKey = ActionParameters.Key<Long>("habitId")
  */
 class HabitWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val repository = (context.applicationContext as HabitudeApplication).repository
+        val app = context.applicationContext as HabitudeApplication
+        val repository = app.repository
         val initial = repository.snapshot()
         provideContent {
             val items by repository.habits.collectAsState(initial)
+            val hasPin by app.settings.pinChanges.collectAsState(app.settings.hasPin)
             GlanceTheme(colors = WidgetColors) {
-                WidgetContent(items, LocalDate.now())
+                val visible = widgetHabits(hasPin, items)
+                if (visible == null) LockedWidget() else WidgetContent(visible, LocalDate.now())
             }
         }
     }
@@ -80,10 +85,13 @@ class HabitWidgetReceiver : GlanceAppWidgetReceiver() {
 /** Ticks or unticks a habit for today from the widget, or counts a counted habit up by one. */
 class ToggleHabitAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        // A stale widget must never change data after the PIN is enabled.
+        if (Settings(context).hasPin) return
         val habitId = parameters[HabitIdKey] ?: return
         val repository = (context.applicationContext as HabitudeApplication).repository
         val today = LocalDate.now()
         val item = repository.snapshot().firstOrNull { it.habit.id == habitId } ?: return
+        if (Settings(context).hasPin) return
         // A counted habit adds one per tap; take one off in the app.
         if (item.habit.isCount) {
             repository.addCount(habitId, today, 1)
@@ -91,6 +99,21 @@ class ToggleHabitAction : ActionCallback {
             repository.setEntry(habitId, today, present = today !in item.entries)
         }
         HabitWidget().update(context, glanceId)
+    }
+}
+
+@Composable
+private fun LockedWidget() {
+    Box(
+        modifier = GlanceModifier
+            .fillMaxSize()
+            .cornerRadius(20.dp)
+            .background(GlanceTheme.colors.widgetBackground)
+            .clickable(actionStartActivity<MainActivity>())
+            .padding(12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("Locked – open Habitude", style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 16.sp))
     }
 }
 
