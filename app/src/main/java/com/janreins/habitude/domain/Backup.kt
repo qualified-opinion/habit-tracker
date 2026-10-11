@@ -4,6 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import java.time.DateTimeException
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -72,22 +73,64 @@ object Backup {
     const val AUTO_KEEP = 4
 
     private const val AUTO_PREFIX = "habitude-auto-"
+    private const val AUTO_DATE = "([0-9]{4}-[0-9]{2}-[0-9]{2})"
+    private const val COPY_SUFFIX = " \\([1-9][0-9]*\\)"
+    private const val AUTO_NAME = "$AUTO_PREFIX$AUTO_DATE(?:$COPY_SUFFIX\\.json|\\.json(?:$COPY_SUFFIX)?)"
+    private val autoName = Regex("^$AUTO_NAME$")
+    private val autoTempName = Regex("^$AUTO_NAME(?:\\.[0-9]+(?:$COPY_SUFFIX)?)?\\.partial(?:$COPY_SUFFIX)?$")
 
     /** The file name for an automatic backup made on [day]. Sorts by date. */
     fun autoFileName(day: LocalDate): String = "$AUTO_PREFIX$day.json"
 
     /** Temporary documents cannot be mistaken for finished backups by retention. */
-    fun autoTempFileName(name: String): String = "$name.partial"
+    fun autoTempFileName(name: String, runId: Long? = null): String =
+        if (runId == null) "$name.partial" else "$name.$runId.partial"
 
-    fun isAutoTempFileName(name: String): Boolean =
-        name.startsWith(AUTO_PREFIX) && name.endsWith(".partial")
+    /** Reads the date of a finished backup, including a provider's numbered copy suffix. */
+    fun autoBackupDate(name: String): LocalDate? = nameDate(autoName, name)
+
+    /** Reads the date of a temporary backup, including unique run names and provider suffixes. */
+    fun autoTempDate(name: String): LocalDate? = nameDate(autoTempName, name)
+
+    private fun nameDate(pattern: Regex, name: String): LocalDate? {
+        val date = pattern.matchEntire(name)?.groupValues?.get(1) ?: return null
+        return try {
+            LocalDate.parse(date)
+        } catch (e: DateTimeException) {
+            null
+        }
+    }
+
+    fun isAutoTempFileName(name: String): Boolean = autoTempDate(name) != null
 
     /**
      * Of the file names in the backup folder, the automatic backups to delete so only the
-     * newest [keep] remain. Anything else in the folder is never touched.
+     * newest [keep] dates remain. Copies on a kept date stay until a successful write can
+     * remove duplicates. Temporary backups and unrelated files are never touched.
      */
-    fun autoBackupsToDelete(names: List<String>, keep: Int = AUTO_KEEP): List<String> =
-        names.filter { it.startsWith(AUTO_PREFIX) && it.endsWith(".json") }.sortedDescending().drop(keep)
+    fun autoBackupsToDelete(names: List<String>, keep: Int = AUTO_KEEP): List<String> {
+        require(keep >= 0)
+        val byDate = names.mapNotNull { name -> autoBackupDate(name)?.let { it to name } }.groupBy({ it.first }, { it.second })
+        return byDate.keys.sortedDescending().drop(keep).flatMap { byDate.getValue(it) }
+    }
+
+    /** After saving a complete final copy, removes other final copies for that same date. */
+    fun autoBackupDuplicatesToDelete(names: List<String>, savedName: String): List<String> {
+        val day = autoBackupDate(savedName) ?: return emptyList()
+        return names.filter { it != savedName && autoBackupDate(it) == day }
+    }
+
+    /** Only a finished backup for the same date makes it safe to remove a recovery temp. */
+    fun autoTempsToDelete(names: List<String>): List<String> {
+        val finishedDates = names.mapNotNull(::autoBackupDate).toSet()
+        return names.filter { autoTempDate(it)?.let(finishedDates::contains) == true }
+    }
+
+    enum class AutoWriteStrategy { RENAME_DONE, FALLBACK_COPY }
+
+    /** A rename finishes the write only when supported, successful, and correctly named. */
+    fun autoWriteStrategy(supportsRename: Boolean, renameSucceeded: Boolean, renamedNameAcceptable: Boolean): AutoWriteStrategy =
+        if (supportsRename && renameSucceeded && renamedNameAcceptable) AutoWriteStrategy.RENAME_DONE else AutoWriteStrategy.FALLBACK_COPY
 
     private val json = Json {
         prettyPrint = true

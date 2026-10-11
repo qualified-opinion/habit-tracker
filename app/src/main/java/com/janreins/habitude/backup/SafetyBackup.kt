@@ -10,12 +10,13 @@ object SafetyBackup {
 
     fun exists(filesDir: File): Boolean = file(filesDir).isFile
 
-    fun timestamp(filesDir: File): Long = if (exists(filesDir)) file(filesDir).lastModified() else 0L
+    /** The import time, carried with the copy by its atomic rename; reading never changes it. */
+    fun madeAt(filesDir: File): Long = if (exists(filesDir)) file(filesDir).lastModified() else 0L
 
     fun read(filesDir: File): String = file(filesDir).readText()
 
     /** Writes and flushes a complete copy before atomically replacing the previous one. */
-    fun write(filesDir: File, text: String) {
+    fun write(filesDir: File, text: String, now: Long = System.currentTimeMillis()) {
         val target = file(filesDir)
         val dir = target.parentFile!!
         if (!dir.isDirectory && !dir.mkdirs()) throw IOException("Couldn't create the safety backup folder")
@@ -23,6 +24,10 @@ object SafetyBackup {
         try {
             FileOutputStream(temp).use {
                 it.write(text.toByteArray(Charsets.UTF_8))
+                // Set and verify the import time before publishing, so data and time change together.
+                if (!temp.setLastModified(now) || temp.lastModified() != now) {
+                    throw IOException("Couldn't save the safety backup time")
+                }
                 it.fd.sync()
             }
             if (!temp.renameTo(target)) throw IOException("Couldn't save the safety backup")

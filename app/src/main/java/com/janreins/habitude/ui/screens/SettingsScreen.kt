@@ -336,7 +336,7 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
     var currentCount by remember { mutableIntStateOf(0) }
     var restoring by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
-    var safetyTime by remember { mutableLongStateOf(SafetyBackup.timestamp(context.filesDir)) }
+    var safetyTime by remember { mutableLongStateOf(SafetyBackup.madeAt(context.filesDir)) }
     val toast = { text: String -> Toast.makeText(context, text, Toast.LENGTH_LONG).show() }
 
     suspend fun replace(contents: BackupContents, restore: Boolean) {
@@ -356,7 +356,7 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
                     toast("Couldn't save your previous data. Import stopped; nothing was changed.")
                     return
                 }
-                safetyTime = SafetyBackup.timestamp(context.filesDir)
+                safetyTime = SafetyBackup.madeAt(context.filesDir)
             }
             val done = runCatching { app.repository.replaceAll(contents.habits) }
             if (done.isFailure) {
@@ -453,7 +453,10 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
     AutoBackupCard(app)
 
     pending?.let { contents ->
-        val made = runCatching {
+        val made = if (restoring) {
+            Instant.ofEpochMilli(safetyTime).atZone(ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))
+        } else runCatching {
             LocalDateTime.parse(contents.exportedAt).format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm"))
         }.getOrDefault(contents.exportedAt)
         AlertDialog(
@@ -461,8 +464,14 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
             title = { Text("Replace your data?") },
             text = {
                 Text(
-                    "This backup from $made has ${plural(contents.habits.size, "habit")}. ${if (restoring) "Restoring" else "Importing"} replaces " +
-                        "the ${plural(currentCount, "habit")} on this phone and all their history.",
+                    if (restoring) {
+                        "This restores your data as it was just before the import on $made. " +
+                            "It has ${plural(contents.habits.size, "habit")} and replaces " +
+                            "the ${plural(currentCount, "habit")} on this phone and all their history."
+                    } else {
+                        "This backup from $made has ${plural(contents.habits.size, "habit")}. Importing replaces " +
+                            "the ${plural(currentCount, "habit")} on this phone and all their history."
+                    },
                 )
             },
             confirmButton = {

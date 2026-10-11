@@ -139,8 +139,10 @@ object AutoBackup {
         }
     }
 
-    private fun children(context: Context, folder: Uri): Map<String, String> {
-        val children = mutableMapOf<String, String>()
+    private data class ChildDocument(val name: String, val id: String)
+
+    private fun children(context: Context, folder: Uri): List<ChildDocument> {
+        val children = mutableListOf<ChildDocument>()
         try {
             context.contentResolver.query(
                 DocumentsContract.buildChildDocumentsUriUsingTree(folder, DocumentsContract.getTreeDocumentId(folder)),
@@ -149,7 +151,7 @@ object AutoBackup {
                 null,
                 null,
             )?.use { cursor ->
-                while (cursor.moveToNext()) children[cursor.getString(1)] = cursor.getString(0)
+                while (cursor.moveToNext()) children += ChildDocument(cursor.getString(1), cursor.getString(0))
             } ?: throw IOException("Couldn't list the backup folder")
         } catch (e: FileNotFoundException) {
             throw SecurityException("Backup folder is gone", e)
@@ -166,46 +168,91 @@ object AutoBackup {
         val resolver = context.contentResolver
         val parent = DocumentsContract.buildDocumentUriUsingTree(folder, DocumentsContract.getTreeDocumentId(folder))
         val existing = children(context, folder)
-        fun delete(fileName: String) {
-            val id = existing[fileName] ?: return
-            if (!DocumentsContract.deleteDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(folder, id))) {
+        fun delete(file: ChildDocument) {
+            if (!DocumentsContract.deleteDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(folder, file.id))) {
                 throw IOException("Couldn't delete the old backup")
             }
         }
 
-        val stale = existing.keys.filter(Backup::isAutoTempFileName)
         // A temp without a final file may be the only complete copy after a failed rename.
-        // Keep those until this run has written a complete replacement.
-        val safeToDelete = stale.filter { it.removeSuffix(".partial") in existing }
-        safeToDelete.forEach(::delete)
+        val stale = Backup.autoTempsToDelete(existing.map { it.name }).toSet()
+        existing.filter { it.name in stale }.forEach(::delete)
+        val day = Backup.autoBackupDate(name) ?: throw IOException("Invalid backup file name")
         // A generic MIME type stops providers appending .json after the temporary suffix.
-        val file = DocumentsContract.createDocument(resolver, parent, "application/octet-stream", Backup.autoTempFileName(name))
-            ?: throw IOException("Couldn't create the backup file")
+        val file = DocumentsContract.createDocument(
+            resolver, parent, "application/octet-stream", Backup.autoTempFileName(name, System.currentTimeMillis()),
+        ) ?: throw IOException("Couldn't create the backup file")
+        fun writeText(target: Uri) {
+            val output = resolver.openOutputStream(target, "wt") ?: throw IOException("Couldn't open the backup file")
+            output.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+        }
         try {
-            val tempName = documentName(context, file)
-            if (tempName == null || !Backup.isAutoTempFileName(tempName)) {
+            if (documentName(context, file)?.let(Backup::autoTempDate) != day) {
                 throw IOException("The backup provider changed the temporary file name")
             }
-            val output = resolver.openOutputStream(file, "wt") ?: throw IOException("Couldn't open the backup file")
-            output.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+            writeText(file)
         } catch (e: Exception) {
             runCatching { DocumentsContract.deleteDocument(resolver, file) }
             throw e
         }
 
-        (stale - safeToDelete.toSet()).forEach(::delete)
-        delete(name)
-        // If rename fails after deleting the old file, leave the complete temp in place
-        // and fail this run. Retention must not run until the final name is confirmed.
-        val renamed = DocumentsContract.renameDocument(resolver, file, name)
-            ?: throw IOException("Couldn't rename the backup file")
-        if (documentName(context, renamed) != name) throw IOException("The backup provider changed the file name")
+        var supportsRename = false
+        var renamed: Uri? = null
+        var renamedNameAcceptable = false
+        var completeCopy = file
+        try {
+            val flags = resolver.query(
+                file, arrayOf(DocumentsContract.Document.COLUMN_FLAGS), null, null, null,
+            )?.use { if (it.moveToFirst()) it.getInt(0) else 0 } ?: 0
+            supportsRename = flags and DocumentsContract.Document.FLAG_SUPPORTS_RENAME != 0
+            if (supportsRename) {
+                // With no same-day final, rename first. Otherwise the complete temp protects
+                // the old copies while they are removed, and stays if rename and fallback fail.
+                existing.filter { Backup.autoBackupDate(it.name) == day }.forEach(::delete)
+                renamed = DocumentsContract.renameDocument(resolver, file, name)
+                if (renamed != null) {
+                    completeCopy = renamed
+                    renamedNameAcceptable = documentName(context, renamed)?.let(Backup::autoBackupDate) == day
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SecurityException) {
+            throw e
+        } catch (e: Exception) {
+            // Some providers advertise rename but reject it, or return an unusable name.
+            // The complete copy stays until the fallback has succeeded.
+        }
+
+        val saved = when (Backup.autoWriteStrategy(supportsRename, renamed != null, renamedNameAcceptable)) {
+            Backup.AutoWriteStrategy.RENAME_DONE -> renamed!!
+            Backup.AutoWriteStrategy.FALLBACK_COPY -> {
+                val copy = DocumentsContract.createDocument(resolver, parent, "application/json", name)
+                    ?: throw IOException("Couldn't create the final backup file")
+                try {
+                    if (documentName(context, copy)?.let(Backup::autoBackupDate) != day) {
+                        throw IOException("The backup provider changed the file name")
+                    }
+                    writeText(copy)
+                } catch (e: Exception) {
+                    runCatching { DocumentsContract.deleteDocument(resolver, copy) }
+                    // Keep the complete temp even if rename already deleted the previous final.
+                    throw e
+                }
+                if (!DocumentsContract.deleteDocument(resolver, completeCopy)) {
+                    throw IOException("Couldn't remove the temporary backup")
+                }
+                copy
+            }
+        }
 
         val finalChildren = children(context, folder)
-        Backup.autoBackupsToDelete(finalChildren.keys.toList()).forEach { oldName ->
-            val oldFile = DocumentsContract.buildDocumentUriUsingTree(folder, finalChildren.getValue(oldName))
-            if (!DocumentsContract.deleteDocument(resolver, oldFile)) throw IOException("Couldn't remove the oldest backup")
-        }
+        val savedName = documentName(context, saved) ?: throw IOException("Couldn't read the final backup name")
+        val savedId = DocumentsContract.getDocumentId(saved)
+        val names = finalChildren.map { it.name }
+        val obsolete = (Backup.autoBackupDuplicatesToDelete(names, savedName) +
+            Backup.autoTempsToDelete(names) + Backup.autoBackupsToDelete(names)).toSet()
+        finalChildren.filter { it.id != savedId && (it.name == savedName || it.name in obsolete) }.forEach(::delete)
     }
 }
 
