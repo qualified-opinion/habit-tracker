@@ -24,13 +24,24 @@ A small, good-looking Android app for building the habits you want and quitting 
 - **App lock**: an optional 6-digit PIN, asked for when you open the app or come back after a minute away. On Android 9 and later you can unlock with your fingerprint or face too
 - **Backup**: export everything to a JSON file and import it again on a new phone or after reinstalling (Settings → Backup). Or turn on a **weekly backup** to a folder you pick, which keeps the newest four. Android's own cloud backup is off, so nothing leaves the phone unless you choose where it goes
 - **Evening streak check** at 8pm if a streak of two days or more is about to break (can be turned off in Settings)
-- A GitHub Actions build that runs the unit tests and produces a debug APK
+- GitHub Actions: every push and pull request runs the unit tests and builds a debug APK for testing; publishing a release builds the release-signed APK and attaches it to that release
 
 ## Get the APK
 
-Open the latest run under **Actions → Android build** and download the `habitude-debug-apk` artifact. Unzip it and install `app-debug.apk` on your phone (you may need to allow installs from unknown sources).
+Download `habitude-<version>.apk` from the latest release under **Releases** and install it on your phone (you may need to allow installs from unknown sources). Release APKs are signed with the Habitude release key.
 
-Every build is signed with the same key (`app/debug.keystore`), so a new APK installs over the old one and keeps your data. Builds made before version 0.5.0 used a random key each time, so uninstall those once before installing 0.5.0 or later. Export a backup first if you want to keep what you have.
+The `habitude-debug-apk` artifact under **Actions → Android build** is a debug build for testing only. It's signed with a different key, so it can't be installed over a release APK (or the other way round) without uninstalling first.
+
+### Upgrading from v1.1.0 or earlier
+
+Releases up to and including v1.1.0 were signed with the debug key. From v1.1.1 on, releases are signed with the release key. Android won't install an app over one signed with a different key, so moving from an older build needs a one-time reinstall, and uninstalling deletes the app's data. To keep your habits:
+
+1. In the old app, export a backup (Settings → Backup) and keep the JSON file somewhere outside the app.
+2. Uninstall the old app.
+3. Install the new APK.
+4. Import the backup (Settings → Backup).
+
+After that, future release updates install in place over the previous one and keep your data.
 
 ## Build locally
 
@@ -39,6 +50,8 @@ Needs JDK 17 and the Android SDK (Android Studio sets both up).
 ```sh
 ./gradlew assembleDebug
 ```
+
+Debug builds are signed with `app/debug.keystore`, a fixed key kept in the repo for debug builds only. It is never used to sign releases.
 
 ## Roadmap
 
