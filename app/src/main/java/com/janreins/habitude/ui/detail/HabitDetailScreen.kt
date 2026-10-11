@@ -120,7 +120,7 @@ fun HabitDetailScreen(
 }
 
 @Composable
-private fun HabitStats(
+internal fun HabitStats(
     item: HabitWithEntries,
     onSetEntry: (LocalDate, Boolean) -> Unit,
     onAddCount: (LocalDate, Int) -> Unit,

@@ -136,4 +136,19 @@ class CountAndMilestoneTest {
         assertTrue(found.isEmpty())
         assertTrue(remember.isEmpty())
     }
+    @Test fun pastDoneDayStaysDoneWhenCountGoesUpUnderAHigherGoal() {
+        assertTrue(Counts.doneAfterEdit(true, 9, 10, true))
+    }
+    @Test fun pastDoneDayStaysDoneWhenCountGoesDownButNotToZero() {
+        assertTrue(Counts.doneAfterEdit(true, 1, 10, true))
+    }
+    @Test fun pastDoneDayClearsAtZero() { assertFalse(Counts.doneAfterEdit(true, 0, 10, true)) }
+    @Test fun pastNotDoneDayBecomesDoneAtCurrentGoal() {
+        assertFalse(Counts.doneAfterEdit(false, 9, 10, true))
+        assertTrue(Counts.doneAfterEdit(false, 10, 10, true))
+    }
+    @Test fun todayStillFollowsTheCurrentGoal() {
+        assertFalse(Counts.doneAfterEdit(true, 9, 10, false))
+        assertTrue(Counts.doneAfterEdit(false, 10, 10, false))
+    }
 }

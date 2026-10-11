@@ -16,8 +16,12 @@ fragment = "1.8.5"
 work = "2.10.0"
 robolectric = "4.17"
 testCore = "1.7.0"
+# 1.11.0 has Kotlin 2.2 metadata, incompatible with this project's Kotlin 2.0.21.
+#noinspection GradleDependency
+coroutinesTest = "1.10.2"
 
 [libraries]
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }

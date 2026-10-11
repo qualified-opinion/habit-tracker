@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.janreins.habitude.domain.HabitType
+import com.janreins.habitude.domain.PastDays
 
 @Composable
 fun HabitCard(
@@ -54,6 +55,7 @@ fun HabitCard(
     onAddCount: (Int) -> Unit = {},
 ) {
     val isBuild = state.type == HabitType.BUILD
+    val dayText = if (state.isToday) "today" else "on ${PastDays.date(state.day)}"
     val accent = if (isBuild) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
 
     Card(
@@ -90,7 +92,7 @@ fun HabitCard(
             }
             val target = state.dailyTarget
             if (isBuild && target != null) {
-                if (state.countToday > 0) {
+                if (state.countOnDay > 0) {
                     IconButton(onClick = { onAddCount(-1) }, modifier = Modifier.size(36.dp)) {
                         Icon(
                             Icons.Rounded.Remove,
@@ -99,10 +101,17 @@ fun HabitCard(
                         )
                     }
                 }
-                CountButton(name = state.name, count = state.countToday, target = target, onClick = { onAddCount(1) })
+                CountButton(
+                    name = state.name,
+                    count = state.countOnDay,
+                    target = target,
+                    done = if (state.isToday) state.countOnDay >= target else state.loggedOnDay,
+                    dayText = dayText,
+                    onClick = { onAddCount(1) },
+                )
             } else if (isBuild) {
-                CheckButton(name = state.name, done = state.loggedToday, onClick = onToggleDone)
-            } else if (state.loggedToday) {
+                CheckButton(name = state.name, done = state.loggedOnDay, dayText = dayText, onClick = onToggleDone)
+            } else if (state.loggedOnDay) {
                 TextButton(onClick = onUndoSlip) { Text("Undo") }
             } else {
                 OutlinedButton(
@@ -115,7 +124,7 @@ fun HabitCard(
 }
 
 @Composable
-private fun CheckButton(name: String, done: Boolean, onClick: () -> Unit) {
+private fun CheckButton(name: String, done: Boolean, dayText: String, onClick: () -> Unit) {
     val haptics = LocalHapticFeedback.current
     val container by animateColorAsState(
         if (done) MaterialTheme.colorScheme.primary else Color.Transparent,
@@ -134,7 +143,7 @@ private fun CheckButton(name: String, done: Boolean, onClick: () -> Unit) {
             .size(44.dp)
             .semantics {
                 role = Role.Checkbox
-                contentDescription = "$name, done today"
+                contentDescription = "$name, done $dayText"
                 stateDescription = if (done) "Done" else "Not done"
             },
     ) {
@@ -152,9 +161,8 @@ private fun CheckButton(name: String, done: Boolean, onClick: () -> Unit) {
 
 /** A ring that fills as a counted habit is counted up. Tap it to add one. */
 @Composable
-private fun CountButton(name: String, count: Int, target: Int, onClick: () -> Unit) {
+private fun CountButton(name: String, count: Int, target: Int, done: Boolean, dayText: String, onClick: () -> Unit) {
     val haptics = LocalHapticFeedback.current
-    val done = count >= target
     val container by animateColorAsState(
         if (done) MaterialTheme.colorScheme.primary else Color.Transparent,
         label = "countContainer",
@@ -172,7 +180,7 @@ private fun CountButton(name: String, count: Int, target: Int, onClick: () -> Un
             .semantics {
                 role = Role.Button
                 contentDescription = "$name, add one"
-                stateDescription = "$count of $target today"
+                stateDescription = "$count of $target $dayText"
             },
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -200,23 +208,27 @@ private fun days(n: Int) = if (n == 1) "1 day" else "$n days"
 private fun weeks(n: Int) = if (n == 1) "1 week" else "$n weeks"
 
 private fun subtitle(state: HabitCardState): String {
+    val dayText = if (state.isToday) "today" else "on ${PastDays.date(state.day)}"
+    val streak = if (state.current > 0) " · 🔥 ${days(state.current)}" else ""
     val best = if (state.best > 0) " · best ${days(state.best)}" else ""
     state.weeklyTarget?.let { target ->
         val streak = if (state.current > 0) " · 🔥 ${weeks(state.current)}" else ""
         return "${state.doneThisWeek} of $target this week$streak"
     }
     state.dailyTarget?.let { target ->
-        val streak = if (state.current > 0) " · 🔥 ${days(state.current)}" else ""
-        return if (!state.scheduledToday && state.countToday == 0) "Rest day$streak" else "${state.countToday} of $target today$streak"
+        return if (!state.dueOnDay && state.countOnDay == 0) "Rest day$streak" else "${state.countOnDay} of $target $dayText$streak"
     }
     return when (state.type) {
         HabitType.BUILD -> when {
+            !state.isToday && state.loggedOnDay -> "Done on ${PastDays.date(state.day)}$streak$best"
+            !state.isToday && !state.dueOnDay -> "Rest day$streak$best"
+            !state.isToday -> "Not done on ${PastDays.date(state.day)}$streak$best"
             state.current > 0 -> "🔥 ${days(state.current)}$best"
-            !state.scheduledToday -> "Rest day$best"
+            !state.dueOnDay -> "Rest day$best"
             else -> "Start your streak today$best"
         }
         HabitType.BREAK -> when {
-            state.loggedToday -> "Slipped today. Tomorrow's a fresh start."
+            state.loggedOnDay -> if (state.isToday) "Slipped today. Tomorrow's a fresh start." else "Slipped that day"
             else -> "${days(state.current)} clean$best"
         }
     }
