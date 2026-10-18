@@ -1,6 +1,7 @@
 package com.janreins.habitude.ui.edit
 
 import android.app.Application
+import android.os.Looper
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import androidx.test.core.app.ApplicationProvider
@@ -10,15 +11,7 @@ import com.janreins.habitude.data.pastDaysDatabase
 import com.janreins.habitude.domain.Habit
 import com.janreins.habitude.domain.HabitType
 import com.janreins.habitude.notify.ReminderScheduler
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.setMain
-import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -26,10 +19,14 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.time.LocalDate
 
-@OptIn(ExperimentalCoroutinesApi::class)
+/*
+ * The view model runs on the real (paused) main looper rather than a test Main dispatcher:
+ * replacing Dispatchers.Main here leaks into the Compose tests that run after this class.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class EditHabitViewModelTest {
@@ -39,51 +36,60 @@ class EditHabitViewModelTest {
     private lateinit var reminders: ReminderScheduler
 
     @Before fun setUp() {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
         db = pastDaysDatabase()
         repository = HabitRepository(db)
         reminders = ReminderScheduler(ApplicationProvider.getApplicationContext())
     }
 
-    @After fun tearDown() { store.clear(); db.close(); Dispatchers.resetMain() }
+    @After fun tearDown() { store.clear(); db.close() }
 
     private fun viewModel(id: Long = 0L) =
         EditHabitViewModel(repository, reminders, SavedStateHandle(mapOf(EditHabitViewModel.ARG_ID to id)))
             .also { store.put("edit-$id", it) }
 
-    @Test fun doubleTapOnSaveAddsTheHabitOnce() = runBlocking {
+    /** Runs the main looper until [done], as Room hands results back to it from its own threads. */
+    private fun awaitMain(done: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!done()) {
+            check(System.currentTimeMillis() < deadline) { "Timed out" }
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(10)
+        }
+        // Give a second, wrongly started save the same chance to finish.
+        repeat(20) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+    }
+
+    @Test fun doubleTapOnSaveAddsTheHabitOnce() {
         val vm = viewModel()
         vm.setName("Read")
         var calls = 0
-        val saved = CompletableDeferred<Unit>()
-        repeat(2) { vm.save({ calls++; saved.complete(Unit) }) }
-        withTimeout(5_000) { saved.await() }
-        delay(200)
+        repeat(2) { vm.save({ calls++ }) }
+        awaitMain { calls > 0 }
         assertEquals(1, calls)
-        assertEquals(listOf("Read"), repository.snapshot().map { it.habit.name })
+        assertEquals(listOf("Read"), runBlocking { repository.snapshot() }.map { it.habit.name })
         assertTrue(vm.busy)
     }
 
-    @Test fun doubleTapOnDeleteLeavesOnce() = runBlocking {
-        val id = repository.save(Habit(name = "Read", emoji = "📚", type = HabitType.BUILD, createdOn = LocalDate.now()))
+    @Test fun doubleTapOnDeleteLeavesOnce() {
+        val id = runBlocking {
+            repository.save(Habit(name = "Read", emoji = "📚", type = HabitType.BUILD, createdOn = LocalDate.now()))
+        }
         val vm = viewModel(id)
         var calls = 0
-        val deleted = CompletableDeferred<Unit>()
-        repeat(2) { vm.delete { calls++; deleted.complete(Unit) } }
-        withTimeout(5_000) { deleted.await() }
-        delay(200)
+        repeat(2) { vm.delete { calls++ } }
+        awaitMain { calls > 0 }
         assertEquals(1, calls)
-        assertTrue(repository.snapshot().isEmpty())
+        assertTrue(runBlocking { repository.snapshot() }.isEmpty())
     }
 
-    @Test fun archiveAfterSaveIsIgnored() = runBlocking {
+    @Test fun archiveAfterSaveIsIgnored() {
         val vm = viewModel()
         vm.setName("Read")
-        val saved = CompletableDeferred<Unit>()
-        vm.save({ saved.complete(Unit) })
-        vm.save({}, archived = true)
-        withTimeout(5_000) { saved.await() }
-        delay(200)
-        assertEquals(listOf(false), repository.snapshot().map { it.habit.archived })
+        var calls = 0
+        vm.save({ calls++ })
+        vm.save({ calls++ }, archived = true)
+        awaitMain { calls > 0 }
+        assertEquals(1, calls)
+        assertEquals(listOf(false), runBlocking { repository.snapshot() }.map { it.habit.archived })
     }
 }
