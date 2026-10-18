@@ -61,9 +61,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.ui.platform.LocalContext
 import com.janreins.habitude.ui.rememberNotificationPermissionRequest
 import com.janreins.habitude.ui.lock.LockAwareDialogHost
+import com.janreins.habitude.ui.formatMinutes
 import com.janreins.habitude.ui.lock.LockAwarePlatformDialog
 import java.time.DayOfWeek
-import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.time.format.TextStyle
@@ -468,9 +468,6 @@ private fun CleanSinceRow(day: LocalDate, onChange: (LocalDate) -> Unit) {
 }
 
 private const val DEFAULT_REMINDER = 9 * 60
-
-private fun formatMinutes(minutes: Int): String =
-    LocalTime.of(minutes / 60, minutes % 60).format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT))
 
 @Composable
 private fun FieldLabel(text: String) {

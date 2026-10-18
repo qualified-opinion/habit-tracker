@@ -101,7 +101,7 @@ object AutoBackup {
                 Outcome.AccessLost
             } else {
                 requireFolder(context, folder)
-                val text = Backup.export(app.repository.snapshot(), app.settings.eveningNudge, LocalDateTime.now())
+                val text = Backup.export(app.repository.snapshot(), app.settings.eveningNudge, LocalDateTime.now(), app.settings.eveningNudgeMinutes)
                 write(context, folder, Backup.autoFileName(LocalDate.now()), text)
                 Outcome.Success
             }

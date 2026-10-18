@@ -50,7 +50,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 ACTION_NUDGE -> {
                     if (!app.settings.eveningNudge) return@work
                     Reminders.nudgeFor(items, today)?.let { Notifications.showNudge(context, it) }
-                    app.reminders.scheduleNudge(true)
+                    app.reminders.scheduleNudge(true, app.settings.eveningNudgeMinutes)
                 }
             }
         }

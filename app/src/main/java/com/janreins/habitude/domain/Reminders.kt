@@ -9,8 +9,11 @@ data class ReminderText(val title: String, val body: String)
 /** What reminders say and when they fire. No Android here, so it can be unit tested. */
 object Reminders {
 
-    /** Evening check for streaks that are about to break, in minutes after midnight (8pm). */
+    /** Default time of the evening check for streaks about to break, in minutes after midnight (8pm). */
     const val NUDGE_MINUTES = 20 * 60
+
+    /** Whether [minutes] is a time of day, 00:00 to 23:59. */
+    fun isValidMinutes(minutes: Int): Boolean = minutes in 0 until 24 * 60
 
     /** The next moment a daily reminder set for [minutes] after midnight should fire. */
     fun nextTrigger(now: LocalDateTime, minutes: Int): LocalDateTime {

@@ -31,13 +31,14 @@ class ReminderScheduler(private val context: Context) {
         Notifications.cancel(context, habitId.toInt())
     }
 
-    fun scheduleNudge(enabled: Boolean) {
-        if (enabled) set(nudgeIntent(), Reminders.NUDGE_MINUTES) else alarms.cancel(nudgeIntent())
+    /** Sets the evening streak check for [minutes] after midnight, or cancels it. */
+    fun scheduleNudge(enabled: Boolean, minutes: Int) {
+        if (enabled) set(nudgeIntent(), minutes) else alarms.cancel(nudgeIntent())
     }
 
-    fun rescheduleAll(habits: List<Habit>, nudge: Boolean) {
+    fun rescheduleAll(habits: List<Habit>, nudge: Boolean, nudgeMinutes: Int) {
         habits.forEach(::schedule)
-        scheduleNudge(nudge)
+        scheduleNudge(nudge, nudgeMinutes)
     }
 
     private fun set(intent: PendingIntent, minutes: Int) {

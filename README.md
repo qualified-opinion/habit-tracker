@@ -23,7 +23,7 @@ A small, good-looking Android app for building the habits you want and quitting 
 - **Reminders**: an optional daily reminder per habit, with a "Done ✓" button right on the notification
 - **App lock**: an optional 6-digit PIN, asked for when you open the app or come back after a minute away. On Android 9 and later you can unlock with your fingerprint or face too
 - **Backup**: export everything to a JSON file and import it again on a new phone or after reinstalling (Settings → Backup). Or turn on a **weekly backup** to a folder you pick, which keeps the newest four. Android's own cloud backup is off, so nothing leaves the phone unless you choose where it goes
-- **Evening streak check** at 8pm if a streak of two days or more is about to break (can be turned off in Settings)
+- **Evening streak check** at 8pm, or a time you pick in Settings, if a streak of two days or more is about to break (can be turned off)
 - GitHub Actions: every push and pull request runs the unit tests and builds a debug APK for testing; publishing a release builds the release-signed APK and attaches it to that release
 
 ## Get the APK
