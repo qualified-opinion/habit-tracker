@@ -16,6 +16,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -47,6 +49,20 @@ private fun editRoute(id: Long = 0, type: HabitType = HabitType.BUILD) =
 private const val DETAIL_ROUTE = "detail/{id}"
 
 private fun detailRoute(id: Long) = "detail/$id"
+
+/*
+ * Screens only move on while they're the one showing. A quick double tap on Back would otherwise
+ * pop twice and leave an empty screen, and a double tap on a habit would open it twice.
+ */
+private fun NavController.isShowing(from: NavBackStackEntry) = currentBackStackEntry?.id == from.id
+
+private fun NavController.backFrom(from: NavBackStackEntry) {
+    if (isShowing(from)) popBackStack()
+}
+
+private fun NavController.openFrom(from: NavBackStackEntry, route: String) {
+    if (isShowing(from)) navigate(route)
+}
 
 @Composable
 fun HabitudeApp() {
@@ -85,14 +101,14 @@ fun HabitudeApp() {
             startDestination = Tab.Today.route,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable(Tab.Today.route) {
+            composable(Tab.Today.route) { entry ->
                 TodayScreen(
-                    onAddHabit = { type -> navController.navigate(editRoute(type = type)) },
-                    onOpenHabit = { id -> navController.navigate(detailRoute(id)) },
+                    onAddHabit = { type -> navController.openFrom(entry, editRoute(type = type)) },
+                    onOpenHabit = { id -> navController.openFrom(entry, detailRoute(id)) },
                 )
             }
-            composable(Tab.Progress.route) {
-                ProgressScreen(onOpenHabit = { id -> navController.navigate(detailRoute(id)) })
+            composable(Tab.Progress.route) { entry ->
+                ProgressScreen(onOpenHabit = { id -> navController.openFrom(entry, detailRoute(id)) })
             }
             composable(Tab.Settings.route) { SettingsScreen() }
             composable(
@@ -107,12 +123,14 @@ fun HabitudeApp() {
                         defaultValue = HabitType.BUILD.name
                     },
                 ),
-            ) {
+            ) { entry ->
                 EditHabitScreen(
-                    onDone = { navController.popBackStack() },
+                    onDone = { navController.backFrom(entry) },
                     onDeleted = {
                         // Skip past the deleted habit's stats page too.
-                        if (!navController.popBackStack(DETAIL_ROUTE, inclusive = true)) navController.popBackStack()
+                        if (navController.isShowing(entry) && !navController.popBackStack(DETAIL_ROUTE, inclusive = true)) {
+                            navController.popBackStack()
+                        }
                     },
                 )
             }
@@ -123,8 +141,8 @@ fun HabitudeApp() {
                 val id = entry.arguments?.getLong("id") ?: 0L
                 HabitDetailScreen(
                     habitId = id,
-                    onBack = { navController.popBackStack() },
-                    onEdit = { navController.navigate(editRoute(id = id)) },
+                    onBack = { navController.backFrom(entry) },
+                    onEdit = { navController.openFrom(entry, editRoute(id = id)) },
                 )
             }
         }

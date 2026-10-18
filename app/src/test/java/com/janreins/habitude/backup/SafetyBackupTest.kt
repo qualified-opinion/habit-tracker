@@ -42,6 +42,21 @@ class SafetyBackupTest {
     }
 
     @Test
+    fun importTimeIsKeptToTheWholeSecond() {
+        SafetyBackup.write(folder.root, "previous", now = 1791727500123L)
+        assertEquals(1791727500000L, SafetyBackup.madeAt(folder.root))
+        assertEquals("previous", SafetyBackup.read(folder.root))
+    }
+
+    @Test
+    fun fileTimesWithoutMillisecondsStillMatch() {
+        // Some phones read file times back without milliseconds.
+        assertTrue(SafetyBackup.sameSecond(read = 1791727500000L, set = 1791727500000L))
+        assertTrue(SafetyBackup.sameSecond(read = 1791727500000L, set = 1791727500999L))
+        assertFalse(SafetyBackup.sameSecond(read = 1791727499000L, set = 1791727500000L))
+    }
+
+    @Test
     fun olderCopyUsesItsExistingModificationTime() {
         val target = File(folder.root, "backups/pre-import.json")
         assertTrue(target.parentFile!!.mkdirs())
