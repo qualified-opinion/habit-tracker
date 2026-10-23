@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 
 class HabitudeApplication : Application() {
     val repository: HabitRepository by lazy {
-        HabitRepository(HabitudeDatabase.create(this))
+        HabitRepository(HabitudeDatabase.create(this), settings)
     }
     val reminders: ReminderScheduler by lazy { ReminderScheduler(this) }
     val settings: Settings by lazy { Settings(this) }

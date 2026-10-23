@@ -2,6 +2,7 @@ package com.janreins.habitude.data
 
 import com.janreins.habitude.domain.Counts
 import com.janreins.habitude.domain.Habit
+import com.janreins.habitude.domain.HabitOrder
 import com.janreins.habitude.domain.HabitType
 import com.janreins.habitude.domain.HabitWithEntries
 import com.janreins.habitude.domain.Notes
@@ -13,10 +14,14 @@ import kotlinx.coroutines.flow.first
 import androidx.room.withTransaction
 import java.time.LocalDate
 
-class HabitRepository(private val db: HabitudeDatabase) {
+/** [orderStore] keeps the order you put your habits in; every list of habits follows it. */
+class HabitRepository(
+    private val db: HabitudeDatabase,
+    private val orderStore: HabitOrderStore = HabitOrderStore.None,
+) {
     private val dao = db.habitDao()
 
-    val habits: Flow<List<HabitWithEntries>> =
+    private val unordered: Flow<List<HabitWithEntries>> =
         combine(
             dao.observeHabits(),
             dao.observeEntries(),
@@ -38,6 +43,8 @@ class HabitRepository(private val db: HabitudeDatabase) {
             }
         }
 
+    val habits: Flow<List<HabitWithEntries>> = combine(unordered, orderStore.order, HabitOrder::sort)
+
     suspend fun getHabit(id: Long): Habit? = dao.getHabit(id)?.toDomain(dao.getPastSchedules(id))
 
     /** Everything as it stands right now, for background work such as reminders. */
@@ -52,7 +59,19 @@ class HabitRepository(private val db: HabitudeDatabase) {
 
     suspend fun delete(id: Long) = dao.deleteHabit(id)
 
-    /** Swaps everything for the contents of a backup, all at once or not at all. */
+    /**
+     * Moves a habit one place up ([delta] -1) or down (+1) among [shownIds], the habits shown
+     * together with it, such as the active ones.
+     */
+    suspend fun move(id: Long, delta: Int, shownIds: List<Long>) {
+        val all = snapshot().map { it.habit.id }
+        orderStore.setOrder(HabitOrder.move(all, shownIds, id, delta))
+    }
+
+    /**
+     * Swaps everything for the contents of a backup, all at once or not at all. The habits'
+     * order follows the backup's list.
+     */
     suspend fun replaceAll(items: List<HabitWithEntries>) {
         db.withTransaction {
             dao.deleteAllCounts()
@@ -72,6 +91,7 @@ class HabitRepository(private val db: HabitudeDatabase) {
                 items.flatMap { item -> item.notes.map { (day, text) -> NoteEntity(item.habit.id, day.toEpochDay(), text) } },
             )
         }
+        orderStore.setOrder(items.map { it.habit.id })
     }
 
     suspend fun setEntry(habitId: Long, day: LocalDate, present: Boolean) {

@@ -13,6 +13,7 @@ A small, good-looking Android app for building the habits you want and quitting 
 - **Milestones**: a small celebration when a streak or clean run reaches 7, 30, 100 or 365 days (4, 12, 26 or 52 weeks for a times-a-week goal), and the ones reached on each habit's stats page
 - **Break** habits: count your days clean, and log a slip honestly when it happens. Set a "clean since" date if you quit before you started using the app
 - **Today** shows how many of today's habits are done, with the ones still to do at the top
+- **Reorder habits** from the Progress tab (Your habits → Reorder habits); Today, Progress and the widget follow your order
 - **Archive** a habit you're pausing: it keeps its history, leaves Today and stops its reminders, and can be restored from its edit screen
 - Current and best streak on every habit, all stored on the phone (no account)
 - Tap a habit for its stats: a 20-week calendar heatmap, weekly completion (or slips) bars and streak history
