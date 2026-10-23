@@ -45,6 +45,6 @@ class HabitudeApplication : Application() {
     }
 
     suspend fun rescheduleReminders() {
-        reminders.rescheduleAll(repository.snapshot().map { it.habit }, settings.eveningNudge)
+        reminders.rescheduleAll(repository.snapshot().map { it.habit }, settings.eveningNudge, settings.eveningNudgeMinutes)
     }
 }

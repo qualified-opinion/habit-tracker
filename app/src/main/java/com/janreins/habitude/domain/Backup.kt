@@ -20,6 +20,8 @@ data class BackupFile(
     val exportedAt: String,
     val habits: List<BackupHabit>,
     val eveningNudge: Boolean? = null,
+    /** Minutes after midnight for the evening check. Missing in backups from before it could be set. */
+    val eveningNudgeMinutes: Int? = null,
 )
 
 @Serializable
@@ -61,6 +63,8 @@ data class BackupContents(
     val habits: List<HabitWithEntries>,
     val eveningNudge: Boolean?,
     val exportedAt: String,
+    /** Null when the backup doesn't say, or holds no valid time. */
+    val eveningNudgeMinutes: Int? = null,
 )
 
 class BackupException(message: String) : Exception(message)
@@ -138,12 +142,18 @@ object Backup {
         encodeDefaults = true
     }
 
-    fun export(items: List<HabitWithEntries>, eveningNudge: Boolean, now: LocalDateTime): String =
+    fun export(
+        items: List<HabitWithEntries>,
+        eveningNudge: Boolean,
+        now: LocalDateTime,
+        eveningNudgeMinutes: Int = Reminders.NUDGE_MINUTES,
+    ): String =
         json.encodeToString(
             BackupFile.serializer(),
             BackupFile(
                 exportedAt = now.withNano(0).toString(),
                 eveningNudge = eveningNudge,
+                eveningNudgeMinutes = eveningNudgeMinutes,
                 habits = items.map { (habit, entries, counts, notes) ->
                     BackupHabit(
                         id = habit.id,
@@ -226,6 +236,11 @@ object Backup {
             }
         }
         if (habits.any { it.habit.id <= 0 }) throw BackupException("This backup is damaged: a habit has no id.")
-        return BackupContents(habits, file.eveningNudge, file.exportedAt)
+        return BackupContents(
+            habits,
+            file.eveningNudge,
+            file.exportedAt,
+            file.eveningNudgeMinutes?.takeIf(Reminders::isValidMinutes),
+        )
     }
 }

@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.provider.Settings as AndroidSettings
 import com.janreins.habitude.domain.Pin
 import com.janreins.habitude.domain.PinCooldown
+import com.janreins.habitude.domain.Reminders
 import com.janreins.habitude.domain.pinCooldown
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
@@ -16,6 +17,11 @@ class Settings(private val context: Context) {
     var eveningNudge: Boolean
         get() = prefs.getBoolean(KEY_NUDGE, true)
         set(value) = prefs.edit().putBoolean(KEY_NUDGE, value).apply()
+
+    /** When the evening streak check comes, in minutes after midnight. */
+    var eveningNudgeMinutes: Int
+        get() = prefs.getInt(KEY_NUDGE_MINUTES, Reminders.NUDGE_MINUTES).takeIf(Reminders::isValidMinutes) ?: Reminders.NUDGE_MINUTES
+        set(value) = prefs.edit().putInt(KEY_NUDGE_MINUTES, value).apply()
 
     val hasPin: Boolean get() = prefs.contains(KEY_PIN_HASH)
 
@@ -137,6 +143,7 @@ class Settings(private val context: Context) {
 
     private companion object {
         const val KEY_NUDGE = "evening_nudge"
+        const val KEY_NUDGE_MINUTES = "evening_nudge_minutes"
         const val KEY_PIN_SALT = "pin_salt"
         const val KEY_PIN_HASH = "pin_hash"
         const val KEY_PIN_FAILURES = "pin_failures"

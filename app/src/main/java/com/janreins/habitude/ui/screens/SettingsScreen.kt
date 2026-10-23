@@ -59,6 +59,10 @@ import com.janreins.habitude.ui.lock.Biometrics
 import com.janreins.habitude.ui.lock.PinPad
 import com.janreins.habitude.ui.lock.findFragmentActivity
 import com.janreins.habitude.ui.lock.LockAwareDialogHost
+import com.janreins.habitude.ui.lock.LockAwarePlatformDialog
+import com.janreins.habitude.ui.formatMinutes
+import android.app.TimePickerDialog
+import android.text.format.DateFormat
 import com.janreins.habitude.ui.plural
 import com.janreins.habitude.ui.rememberNotificationPermissionRequest
 import com.janreins.habitude.widget.HabitWidget
@@ -76,6 +80,7 @@ fun SettingsScreen() {
     val context = LocalContext.current
     val app = context.applicationContext as HabitudeApplication
     var nudge by remember { mutableStateOf(app.settings.eveningNudge) }
+    var nudgeMinutes by remember { mutableIntStateOf(app.settings.eveningNudgeMinutes) }
     var canPost by remember { mutableStateOf(Notifications.canPost(context)) }
     val openSystemSettings = {
         context.startActivity(
@@ -123,7 +128,7 @@ fun SettingsScreen() {
                 Column(Modifier.weight(1f)) {
                     Text("Evening streak check", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "At 8pm, a heads-up if a streak of two days or more is about to break.",
+                        "In the evening, a heads-up if a streak of two days or more is about to break.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -133,10 +138,17 @@ fun SettingsScreen() {
                     onCheckedChange = { on ->
                         nudge = on
                         app.settings.eveningNudge = on
-                        app.reminders.scheduleNudge(on)
+                        app.reminders.scheduleNudge(on, nudgeMinutes)
                         if (on) askPermission()
                     },
                 )
+            }
+            if (nudge) {
+                NudgeTimeRow(minutes = nudgeMinutes) { minutes ->
+                    nudgeMinutes = minutes
+                    app.settings.eveningNudgeMinutes = minutes
+                    app.reminders.scheduleNudge(true, minutes)
+                }
             }
             Text(
                 "Per-habit reminders are set when you add or edit a habit.",
@@ -147,7 +159,7 @@ fun SettingsScreen() {
 
         AppLockCard(app)
 
-        BackupCard(app, onNudgeChanged = { nudge = it })
+        BackupCard(app, onNudgeChanged = { on, minutes -> nudge = on; nudgeMinutes = minutes })
 
         SettingsCard {
             Text("About", style = MaterialTheme.typography.titleMedium)
@@ -157,6 +169,38 @@ fun SettingsScreen() {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/** When the evening streak check comes; tap to pick another time. */
+@Composable
+private fun NudgeTimeRow(minutes: Int, onChange: (Int) -> Unit) {
+    val context = LocalContext.current
+    var picking by remember { mutableStateOf(false) }
+    if (picking) {
+        LockAwarePlatformDialog(onDismiss = { picking = false }) { canAct ->
+            TimePickerDialog(
+                context,
+                { _, hour, minute -> if (canAct()) onChange(hour * 60 + minute) },
+                minutes / 60,
+                minutes % 60,
+                DateFormat.is24HourFormat(context),
+            )
+        }
+    }
+    Surface(
+        onClick = { picking = true },
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Check at", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(formatMinutes(minutes), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -335,7 +379,7 @@ private fun AppLockCard(app: HabitudeApplication) {
 }
 
 @Composable
-private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Unit) {
+private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (on: Boolean, minutes: Int) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<BackupContents?>(null) }
@@ -354,7 +398,7 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
                     withContext(Dispatchers.IO) {
                         SafetyBackup.write(
                             context.filesDir,
-                            Backup.export(current, app.settings.eveningNudge, LocalDateTime.now()),
+                            Backup.export(current, app.settings.eveningNudge, LocalDateTime.now(), app.settings.eveningNudgeMinutes),
                         )
                     }
                 }
@@ -369,10 +413,9 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
                 toast("${if (restore) "Restore" else "Import"} failed. Nothing was changed.")
                 return
             }
-            contents.eveningNudge?.let {
-                app.settings.eveningNudge = it
-                onNudgeChanged(it)
-            }
+            contents.eveningNudge?.let { app.settings.eveningNudge = it }
+            contents.eveningNudgeMinutes?.let { app.settings.eveningNudgeMinutes = it }
+            onNudgeChanged(app.settings.eveningNudge, app.settings.eveningNudgeMinutes)
             current.forEach { app.reminders.cancel(it.habit.id) }
             app.rescheduleReminders()
             val message = "${if (restore) "Restored" else "Imported"} ${plural(contents.habits.size, "habit")}."
@@ -387,7 +430,7 @@ private fun BackupCard(app: HabitudeApplication, onNudgeChanged: (Boolean) -> Un
         scope.launch {
             val saved = runCatching {
                 withContext(Dispatchers.IO) {
-                    val text = Backup.export(app.repository.snapshot(), app.settings.eveningNudge, LocalDateTime.now())
+                    val text = Backup.export(app.repository.snapshot(), app.settings.eveningNudge, LocalDateTime.now(), app.settings.eveningNudgeMinutes)
                     context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(text.toByteArray()) }
                 }
             }

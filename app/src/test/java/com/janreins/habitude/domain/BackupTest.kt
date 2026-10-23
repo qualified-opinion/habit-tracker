@@ -1,6 +1,7 @@
 package com.janreins.habitude.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.time.DayOfWeek
@@ -68,6 +69,27 @@ class BackupTest {
         }
         assertThrows(BackupException::class.java) {
             Backup.parse("""{"app":"Habitude","format":1,"exportedAt":"x","habits":[{"id":1,"name":"A","emoji":"x","type":"BUILD","days":[1],"createdOn":"yesterday","entries":[]}]}""")
+        }
+    }
+
+    @Test
+    fun keepsTheEveningCheckTime() {
+        val text = Backup.export(items, eveningNudge = true, now = LocalDateTime.of(2026, 10, 18, 9, 0), eveningNudgeMinutes = 21 * 60 + 30)
+        assertEquals(21 * 60 + 30, Backup.parse(text).eveningNudgeMinutes)
+    }
+
+    @Test
+    fun olderBackupWithoutTheEveningCheckTimeLeavesItAlone() {
+        val back = Backup.parse("""{"app":"Habitude","format":1,"exportedAt":"x","eveningNudge":true,"habits":[]}""")
+        assertEquals(true, back.eveningNudge)
+        assertNull(back.eveningNudgeMinutes)
+    }
+
+    @Test
+    fun ignoresAnEveningCheckTimeThatIsNotATimeOfDay() {
+        for (bad in listOf(-1, 24 * 60, 99_999)) {
+            val back = Backup.parse("""{"app":"Habitude","format":1,"exportedAt":"x","eveningNudgeMinutes":$bad,"habits":[]}""")
+            assertNull(back.eveningNudgeMinutes)
         }
     }
 }

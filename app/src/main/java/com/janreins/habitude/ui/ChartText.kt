@@ -2,11 +2,17 @@ package com.janreins.habitude.ui
 
 import com.janreins.habitude.domain.DayMark
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import kotlin.math.roundToInt
 
 private val dayFormat = DateTimeFormatter.ofPattern("EEE d MMM")
 private val shortFormat = DateTimeFormatter.ofPattern("d MMM")
+
+/** A time of day given in minutes after midnight, in the phone's short time format. */
+fun formatMinutes(minutes: Int): String =
+    LocalTime.of(minutes / 60, minutes % 60).format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT))
 
 fun plural(n: Int, word: String) = if (n == 1) "1 $word" else "$n ${word}s"
 
