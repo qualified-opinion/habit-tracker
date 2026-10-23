@@ -8,8 +8,11 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [HabitEntity::class, EntryEntity::class, PastScheduleEntity::class, DayCountEntity::class, NoteEntity::class],
-    version = 7,
+    entities = [
+        HabitEntity::class, EntryEntity::class, PastScheduleEntity::class, DayCountEntity::class, NoteEntity::class,
+        PastDailyTargetEntity::class,
+    ],
+    version = 8,
     exportSchema = true,
 )
 abstract class HabitudeDatabase : RoomDatabase() {
@@ -77,8 +80,23 @@ abstract class HabitudeDatabase : RoomDatabase() {
             }
         }
 
+        /** Version 8 keeps a counted habit's old daily goals, so changing the goal doesn't rewrite its past. */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `past_daily_targets` (`habitId` INTEGER NOT NULL, " +
+                        "`untilEpochDay` INTEGER NOT NULL, `target` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`habitId`, `untilEpochDay`), FOREIGN KEY(`habitId`) REFERENCES `habits`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_past_daily_targets_habitId` ON `past_daily_targets` (`habitId`)")
+            }
+        }
+
         /** All supported upgrades, also used by the migration tests. */
-        internal val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+        internal val ALL_MIGRATIONS = arrayOf(
+            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+        )
 
         fun create(context: Context): HabitudeDatabase =
             Room.databaseBuilder(context, HabitudeDatabase::class.java, "habitude.db")

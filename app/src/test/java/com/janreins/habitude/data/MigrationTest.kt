@@ -37,9 +37,12 @@ class MigrationTest {
     @Test
     fun migrateFromVersion6() = migrateFrom(6)
 
-    /** Version 7 is also exercised so notes have a populated fixture. */
     @Test
-    fun validateVersion7() = migrateFrom(7)
+    fun migrateFromVersion7() = migrateFrom(7)
+
+    /** The latest version is also exercised so old daily goals have a populated fixture. */
+    @Test
+    fun validateVersion8() = migrateFrom(8)
 
     private fun migrateFrom(version: Int) {
         val name = "migration-$version.db"
@@ -47,7 +50,7 @@ class MigrationTest {
         context.deleteDatabase(name)
         try {
             helper.createDatabase(name, version).use { insertRows(it, version) }
-            helper.runMigrationsAndValidate(name, 7, true, *HabitudeDatabase.ALL_MIGRATIONS).use { db ->
+            helper.runMigrationsAndValidate(name, 8, true, *HabitudeDatabase.ALL_MIGRATIONS).use { db ->
                 assertRows(db, version)
                 db.query("PRAGMA foreign_key_check").use { assertFalse(it.moveToFirst()) }
             }
@@ -62,6 +65,8 @@ class MigrationTest {
                 assertEquals(version >= 4, habit.archived)
                 assertEquals(if (version >= 5) 3 else null, habit.weeklyTarget)
                 assertEquals(if (version >= 6) 5 else null, habit.dailyTarget)
+                val pastTargets = runBlocking { room.habitDao().getPastDailyTargets(1) }
+                assertEquals(if (version >= 8) listOf(PastDailyTargetEntity(1, 20001, 4)) else emptyList<PastDailyTargetEntity>(), pastTargets)
             } finally {
                 room.close()
             }
@@ -97,6 +102,7 @@ class MigrationTest {
         if (version >= 3) db.execSQL("INSERT INTO past_schedules (habitId, untilEpochDay, scheduleMask) VALUES (1, 20001, 127)")
         if (version >= 6) db.execSQL("INSERT INTO day_counts (habitId, epochDay, amount) VALUES (1, 20001, 5)")
         if (version >= 7) db.execSQL("INSERT INTO notes (habitId, epochDay, body) VALUES (1, 20001, 'Before bed')")
+        if (version >= 8) db.execSQL("INSERT INTO past_daily_targets (habitId, untilEpochDay, target) VALUES (1, 20001, 4)")
     }
 
     private fun assertRows(db: SupportSQLiteDatabase, version: Int) {
@@ -123,6 +129,7 @@ class MigrationTest {
         }
         assertHistory(db, "past_schedules", "untilEpochDay", "scheduleMask", if (version >= 3) 127 else null)
         assertHistory(db, "day_counts", "epochDay", "amount", if (version >= 6) 5 else null)
+        assertHistory(db, "past_daily_targets", "untilEpochDay", "target", if (version >= 8) 4 else null)
         db.query("SELECT habitId, epochDay, body FROM notes").use {
             assertEquals(version >= 7, it.moveToFirst())
             if (version >= 7) {

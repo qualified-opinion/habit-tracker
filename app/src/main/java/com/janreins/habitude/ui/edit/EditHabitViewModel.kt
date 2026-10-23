@@ -127,8 +127,10 @@ class EditHabitViewModel(
         busy = true
         viewModelScope.launch {
             val schedule = if (s.type == HabitType.BUILD) s.schedule else DayOfWeek.entries.toSet()
-            // A changed schedule applies from today; earlier days keep the one they had.
-            val base = loaded?.withSchedule(schedule, DayClock.today())
+            val dailyTarget = s.dailyTarget.takeIf { s.type == HabitType.BUILD }
+            // A changed schedule or daily goal applies from today; earlier days keep the one they had.
+            val today = DayClock.today()
+            val base = loaded?.withSchedule(schedule, today)?.withDailyTarget(dailyTarget, today)
                 ?: Habit(id = habitId, name = "", emoji = "", type = s.type, schedule = schedule, createdOn = s.createdOn)
             val habit = base.copy(
                 name = s.name.trim(),
@@ -136,13 +138,13 @@ class EditHabitViewModel(
                 reminderMinutes = s.reminderMinutes,
                 archived = archived,
                 weeklyTarget = s.weeklyTarget.takeIf { s.type == HabitType.BUILD },
-                dailyTarget = s.dailyTarget.takeIf { s.type == HabitType.BUILD },
+                dailyTarget = dailyTarget,
                 // A break habit's start is its "clean since" date, which can be moved.
                 createdOn = if (s.type == HabitType.BREAK) s.createdOn else base.createdOn,
             )
             val id = repository.save(habit)
             // A new goal decides whether today's count so far makes it done.
-            if (habit.dailyTarget != null) repository.recheckCount(id, DayClock.today())
+            if (habit.dailyTarget != null) repository.recheckCount(id, today)
             reminders.schedule(habit.copy(id = id))
             onSaved()
         }

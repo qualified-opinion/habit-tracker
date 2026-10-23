@@ -66,6 +66,26 @@ data class PastScheduleEntity(
     val scheduleMask: Int,
 )
 
+/** A daily goal a counted habit used to have, up to and including [untilEpochDay]. */
+@Entity(
+    tableName = "past_daily_targets",
+    primaryKeys = ["habitId", "untilEpochDay"],
+    foreignKeys = [
+        ForeignKey(
+            entity = HabitEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["habitId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("habitId")],
+)
+data class PastDailyTargetEntity(
+    val habitId: Long,
+    val untilEpochDay: Long,
+    val target: Int,
+)
+
 /**
  * A counted habit's running count for one day. The day's [EntryEntity] is kept in step,
  * present once the count reaches the goal, so streaks and charts read only entries.

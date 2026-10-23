@@ -8,7 +8,7 @@ A small, good-looking Android app for building the habits you want and quitting 
 - Three tabs: **Today**, **Progress** and **Settings**
 - **Build** habits: tick them off on their scheduled days to grow a 🔥 streak; rest days don't break it
 - Or give a build habit a **times a week** goal (say, gym 3 times a week on any days); its streak counts the weeks you hit it
-- **Count habits**, like 8 glasses of water: tap the ring on Today once each time, and the day counts as done when it reaches the goal
+- **Count habits**, like 8 glasses of water: tap the ring on Today once each time, and the day counts as done when it reaches the goal. Changing the goal only applies from that day on
 - **Home-screen widget**: today's habits with a tap to tick each one off (or count one more); it moves on to the new day just after midnight
 - **Milestones**: a small celebration when a streak or clean run reaches 7, 30, 100 or 365 days (4, 12, 26 or 52 weeks for a times-a-week goal), and the ones reached on each habit's stats page
 - **Break** habits: count your days clean, and log a slip honestly when it happens. Set a "clean since" date if you quit before you started using the app
