@@ -4,13 +4,16 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import com.janreins.habitude.domain.Days
 import com.janreins.habitude.domain.Habit
 import com.janreins.habitude.domain.Reminders
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 
 /**
- * Sets one alarm per habit reminder, plus one for the evening streak check. Alarms are
+ * Sets one alarm per habit reminder, one for the evening streak check, and one just after
+ * midnight that moves the home-screen widget on to the new day. Alarms are
  * "allow while idle" rather than exact, so they need no special permission and may land a
  * few minutes late when the phone is dozing. Each alarm re-arms itself for the next day.
  */
@@ -36,9 +39,16 @@ class ReminderScheduler(private val context: Context) {
         if (enabled) set(nudgeIntent(), minutes) else alarms.cancel(nudgeIntent())
     }
 
+    /** Sets the alarm that refreshes the widget just after the next midnight. */
+    fun scheduleMidnight() {
+        val millis = Days.justAfterMidnight(ZonedDateTime.now()).toInstant().toEpochMilli()
+        alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, millis, midnightIntent())
+    }
+
     fun rescheduleAll(habits: List<Habit>, nudge: Boolean, nudgeMinutes: Int) {
         habits.forEach(::schedule)
         scheduleNudge(nudge, nudgeMinutes)
+        scheduleMidnight()
     }
 
     private fun set(intent: PendingIntent, minutes: Int) {
@@ -60,6 +70,13 @@ class ReminderScheduler(private val context: Context) {
         context,
         Notifications.NUDGE_NOTIFICATION_ID,
         Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.ACTION_NUDGE),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    private fun midnightIntent(): PendingIntent = PendingIntent.getBroadcast(
+        context,
+        0,
+        Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.ACTION_MIDNIGHT),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 }

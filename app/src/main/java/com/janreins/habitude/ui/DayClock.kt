@@ -13,8 +13,8 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 /**
- * The current date and time as the screens see it. The app refreshes it whenever it comes
- * back to the front and at midnight, so nothing keeps showing yesterday.
+ * The current date and time as the screens and the widget see it. The app refreshes it
+ * whenever it comes back to the front and at midnight, so nothing keeps showing yesterday.
  */
 object DayClock {
     private val current = MutableStateFlow(LocalDateTime.now())
@@ -25,8 +25,8 @@ object DayClock {
 
     fun today(): LocalDate = current.value.toLocalDate()
 
-    fun refresh() {
-        current.value = LocalDateTime.now()
+    fun refresh(now: LocalDateTime = LocalDateTime.now()) {
+        current.value = now
     }
 }
 
