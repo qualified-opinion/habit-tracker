@@ -230,7 +230,7 @@ fun EditHabitScreen(
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = { viewModel.save(onDone) },
-            enabled = state.canSave,
+            enabled = state.canSave && !viewModel.busy,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
@@ -241,7 +241,7 @@ fun EditHabitScreen(
         if (!state.isNew) {
             OutlinedButton(
                 onClick = { viewModel.save(onDone, archived = !state.archived) },
-                enabled = state.canSave,
+                enabled = state.canSave && !viewModel.busy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(if (state.archived) "Restore habit" else "Archive habit")

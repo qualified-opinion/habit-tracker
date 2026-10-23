@@ -68,6 +68,13 @@ class EditHabitViewModel(
 
     val hasChanges: Boolean get() = state != initial
 
+    /**
+     * True from the first tap on Save, Archive or Delete. Further taps are ignored, so a quick
+     * double tap can't save a new habit twice or leave the screen twice.
+     */
+    var busy by mutableStateOf(false)
+        private set
+
     init {
         if (habitId != 0L) {
             viewModelScope.launch {
@@ -116,7 +123,8 @@ class EditHabitViewModel(
     /** Saves the form; [archived] also archives or restores the habit. */
     fun save(onSaved: () -> Unit, archived: Boolean = state.archived) {
         val s = state
-        if (!s.canSave) return
+        if (!s.canSave || busy) return
+        busy = true
         viewModelScope.launch {
             val schedule = if (s.type == HabitType.BUILD) s.schedule else DayOfWeek.entries.toSet()
             // A changed schedule applies from today; earlier days keep the one they had.
@@ -141,6 +149,8 @@ class EditHabitViewModel(
     }
 
     fun delete(onDeleted: () -> Unit) {
+        if (busy) return
+        busy = true
         viewModelScope.launch {
             repository.delete(habitId)
             reminders.cancel(habitId)
