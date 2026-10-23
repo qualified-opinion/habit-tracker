@@ -39,12 +39,12 @@ One pull request per step, merged in this order. Each one is small and can be un
 
 1. **Double taps and import safety copy** (N1, N2), issue #19. Save buttons ignore a second tap while saving; Back, Save and Delete only navigate once. The safety copy keeps its time to the whole second, so the check works on every phone. Also adds this plan. Test: tap Start this habit twice fast, and check there's one habit. Import a backup with habits already in the app.
 2. **Choose the evening check time** (13), issue #20. A time row under the evening check switch in Settings. The time is kept in backups. No database change. Test: set it to 2 minutes from now with a streak at risk, and the notification comes then.
-3. **Reorder habits** (11), issue #21. Database version 8 adds a sort order, with an upgrade test. A "Reorder" screen with up and down buttons (works with TalkBack, unlike drag and drop). Today, Progress, the widget and backups follow the order. Test: move a habit to the top, and it's first on Today and the widget; export and import, and the order stays.
+3. **Reorder habits** (11), issue #21. The order is kept in the app's settings, so there is no database change. A "Reorder habits" button on Progress shows up and down buttons (works with TalkBack, unlike drag and drop). Today, Progress, the widget and backups follow the order. Test: move a habit to the top, and it's first on Today and the widget; export and import, and the order stays.
 4. **TalkBack labels on the habit form, and the widget at midnight** (N3, N4, N6), issue #22. Full day names and selected states on the day and icon pickers. The widget refreshes just after midnight. Tests for the shared clock. Test: with TalkBack on, the day picker reads "Tuesday, selected".
-5. **Count goal history** (H10), issue #23. Optional. Database version 9 keeps old daily goals, the same way schedules are kept, so old days are shown and edited against the goal they had.
+5. **Count goal history** (H10), issue #23. Optional. Database version 8 keeps old daily goals, the same way schedules are kept, so old days are shown and edited against the goal they had.
 6. **Target Android 16** (N5), issue #24. Optional, only for publishing on Google Play. Upgrades the build tools; test the whole app on a phone afterwards.
 
-Steps 3 and 5 both change the database, so they must go in this order. Every other step stands alone.
+Only step 5 changes the database. Every step stands alone.
 
 ## Rules for every pull request
 
