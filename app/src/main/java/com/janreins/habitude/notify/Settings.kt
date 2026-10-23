@@ -3,6 +3,8 @@ package com.janreins.habitude.notify
 import android.content.Context
 import android.os.SystemClock
 import android.provider.Settings as AndroidSettings
+import com.janreins.habitude.data.HabitOrderStore
+import com.janreins.habitude.domain.HabitOrder
 import com.janreins.habitude.domain.Pin
 import com.janreins.habitude.domain.PinCooldown
 import com.janreins.habitude.domain.Reminders
@@ -11,7 +13,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 
 /** Small app preferences kept on the phone. */
-class Settings(private val context: Context) {
+class Settings(private val context: Context) : HabitOrderStore {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     var eveningNudge: Boolean
@@ -22,6 +24,20 @@ class Settings(private val context: Context) {
     var eveningNudgeMinutes: Int
         get() = prefs.getInt(KEY_NUDGE_MINUTES, Reminders.NUDGE_MINUTES).takeIf(Reminders::isValidMinutes) ?: Reminders.NUDGE_MINUTES
         set(value) = prefs.edit().putInt(KEY_NUDGE_MINUTES, value).apply()
+
+    /** The order you put your habits in, as habit ids; follows every change. */
+    override val order = callbackFlow {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_HABIT_ORDER) trySend(HabitOrder.decode(prefs.getString(KEY_HABIT_ORDER, null)))
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        trySend(HabitOrder.decode(prefs.getString(KEY_HABIT_ORDER, null)))
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    override fun setOrder(ids: List<Long>) {
+        prefs.edit().putString(KEY_HABIT_ORDER, HabitOrder.encode(ids)).apply()
+    }
 
     val hasPin: Boolean get() = prefs.contains(KEY_PIN_HASH)
 
@@ -144,6 +160,7 @@ class Settings(private val context: Context) {
     private companion object {
         const val KEY_NUDGE = "evening_nudge"
         const val KEY_NUDGE_MINUTES = "evening_nudge_minutes"
+        const val KEY_HABIT_ORDER = "habit_order"
         const val KEY_PIN_SALT = "pin_salt"
         const val KEY_PIN_HASH = "pin_hash"
         const val KEY_PIN_FAILURES = "pin_failures"

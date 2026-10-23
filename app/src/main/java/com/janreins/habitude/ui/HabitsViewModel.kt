@@ -35,6 +35,11 @@ class HabitsViewModel(private val repository: HabitRepository) : ViewModel() {
         viewModelScope.launch { repository.addCount(habitId, day, delta) }
     }
 
+    /** Moves a habit one place up (-1) or down (+1) among [shownIds]. */
+    fun move(habitId: Long, delta: Int, shownIds: List<Long>) {
+        viewModelScope.launch { repository.move(habitId, delta, shownIds) }
+    }
+
     companion object {
         val Factory = viewModelFactory {
             initializer {

@@ -13,7 +13,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +89,7 @@ fun ProgressScreen(
                 archived = items.filter { it.habit.archived },
                 today = today,
                 onOpenHabit = onOpenHabit,
+                onMove = viewModel::move,
             )
         }
     }
@@ -91,7 +101,9 @@ private fun ProgressContent(
     archived: List<HabitWithEntries>,
     today: LocalDate,
     onOpenHabit: (Long) -> Unit,
+    onMove: (habitId: Long, delta: Int, shownIds: List<Long>) -> Unit,
 ) {
+    var reordering by rememberSaveable { mutableStateOf(false) }
     val builds = items.filter { it.habit.type == HabitType.BUILD }
     val overall = remember(items, today) {
         Stats.dailyOverall(items, today.minusDays(7L * 20), today, today)
@@ -126,8 +138,32 @@ private fun ProgressContent(
 
     if (items.isNotEmpty()) {
         ChartCard("Your habits") {
+            if (items.size > 1) {
+                TextButton(onClick = { reordering = !reordering }) {
+                    Text(if (reordering) "Done" else "Reorder habits")
+                }
+            }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items.forEach { item -> HabitRow(item, today, onClick = { onOpenHabit(item.habit.id) }) }
+                val shownIds = items.map { it.habit.id }
+                items.forEachIndexed { index, item ->
+                    if (reordering && items.size > 1) {
+                        ReorderRow(
+                            item,
+                            canMoveUp = index > 0,
+                            canMoveDown = index < items.lastIndex,
+                            onMove = { delta -> onMove(item.habit.id, delta, shownIds) },
+                        )
+                    } else {
+                        HabitRow(item, today, onClick = { onOpenHabit(item.habit.id) })
+                    }
+                }
+            }
+            if (reordering) {
+                Text(
+                    "Today, Progress and the widget show your habits in this order.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -136,6 +172,36 @@ private fun ProgressContent(
         ChartCard("Archived") {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 archived.forEach { item -> HabitRow(item, today, onClick = { onOpenHabit(item.habit.id) }) }
+            }
+        }
+    }
+}
+
+/** A habit with buttons to move it up or down; buttons rather than dragging, so TalkBack can use them. */
+@Composable
+private fun ReorderRow(item: HabitWithEntries, canMoveUp: Boolean, canMoveDown: Boolean, onMove: (Int) -> Unit) {
+    val habit = item.habit
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) { Text(habit.emoji, fontSize = 20.sp) }
+            Text(
+                habit.name,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = { onMove(-1) }, enabled = canMoveUp) {
+                Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move ${habit.name} up")
+            }
+            IconButton(onClick = { onMove(1) }, enabled = canMoveDown) {
+                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move ${habit.name} down")
             }
         }
     }
