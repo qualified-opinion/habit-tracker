@@ -1,5 +1,6 @@
 package com.janreins.habitude.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -45,6 +46,7 @@ import com.janreins.habitude.notify.Settings
 import com.janreins.habitude.domain.HabitType
 import com.janreins.habitude.domain.HabitWithEntries
 import com.janreins.habitude.domain.TodayList
+import com.janreins.habitude.ui.DayClock
 import com.janreins.habitude.ui.theme.DarkColors
 import com.janreins.habitude.ui.theme.LightColors
 import java.time.LocalDate
@@ -65,21 +67,31 @@ class HabitWidget : GlanceAppWidget() {
         provideContent {
             val items by repository.habits.collectAsState(initial)
             val hasPin by app.settings.pinChanges.collectAsState(app.settings.hasPin)
+            val today by DayClock.today.collectAsState(DayClock.today())
             GlanceTheme(colors = WidgetColors) {
                 val visible = widgetHabits(hasPin, items)
-                if (visible == null) LockedWidget() else WidgetContent(visible, LocalDate.now())
+                if (visible == null) LockedWidget() else WidgetContent(visible, today)
             }
         }
     }
 
     companion object {
         /** Redraws every Habitude widget, e.g. after a habit changes in the app. */
-        suspend fun refresh(context: Context) = HabitWidget().updateAll(context)
+        suspend fun refresh(context: Context) {
+            DayClock.refresh()
+            HabitWidget().updateAll(context)
+        }
     }
 }
 
 class HabitWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = HabitWidget()
+
+    // The launcher's half-hourly update also moves the widget on to a new day.
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        DayClock.refresh()
+        super.onUpdate(context, appWidgetManager, appWidgetIds)
+    }
 }
 
 /** Ticks or unticks a habit for today from the widget, or counts a counted habit up by one. */
@@ -89,7 +101,9 @@ class ToggleHabitAction : ActionCallback {
         if (Settings(context).hasPin) return
         val habitId = parameters[HabitIdKey] ?: return
         val repository = (context.applicationContext as HabitudeApplication).repository
-        val today = LocalDate.now()
+        // Tick the day the widget is about to show, never a stale one.
+        DayClock.refresh()
+        val today = DayClock.today()
         val item = repository.snapshot().firstOrNull { it.habit.id == habitId } ?: return
         if (Settings(context).hasPin) return
         // A counted habit adds one per tap; take one off in the app.

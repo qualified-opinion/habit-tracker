@@ -38,6 +38,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
@@ -135,36 +138,7 @@ fun EditHabitScreen(
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             FieldLabel("Icon")
-            HabitEmojis.chunked(8).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    row.forEach { emoji ->
-                        val selected = emoji == state.emoji
-                        Surface(
-                            onClick = { viewModel.setEmoji(emoji) },
-                            shape = CircleShape,
-                            color = if (selected) {
-                                if (isBuild) MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            },
-                            border = if (selected) {
-                                BorderStroke(
-                                    2.dp,
-                                    if (isBuild) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                                )
-                            } else {
-                                null
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) { Text(emoji, fontSize = 18.sp) }
-                        }
-                    }
-                }
-            }
+            EmojiPicker(selected = state.emoji, isBuild = isBuild, onPick = viewModel::setEmoji)
         }
 
         if (isBuild) {
@@ -187,30 +161,7 @@ fun EditHabitScreen(
         } else if (isBuild) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FieldLabel("On these days")
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    DayOfWeek.entries.forEach { day ->
-                        val selected = day in state.schedule
-                        Surface(
-                            onClick = { viewModel.toggleDay(day) },
-                            shape = CircleShape,
-                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    day.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
-                                    style = MaterialTheme.typography.labelLarge,
-                                )
-                            }
-                        }
-                    }
-                }
+                DayPicker(schedule = state.schedule, onToggle = viewModel::toggleDay)
             }
         }
 
@@ -299,6 +250,81 @@ fun EditHabitScreen(
                     TextButton(onClick = { confirmDelete = false }) { Text("Keep it") }
                 },
             )
+        }
+    }
+}
+
+/** The icon choices, eight to a row. Each one tells TalkBack whether it's the chosen icon. */
+@Composable
+internal fun EmojiPicker(selected: String, isBuild: Boolean, onPick: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HabitEmojis.chunked(8).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { emoji ->
+                    val chosen = emoji == selected
+                    Surface(
+                        selected = chosen,
+                        onClick = { onPick(emoji) },
+                        shape = CircleShape,
+                        color = if (chosen) {
+                            if (isBuild) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        border = if (chosen) {
+                            BorderStroke(
+                                2.dp,
+                                if (isBuild) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                            )
+                        } else {
+                            null
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(1f),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) { Text(emoji, fontSize = 18.sp) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One circle per weekday. The circles show one letter, so TalkBack reads the full day name
+ * instead (otherwise Tuesday and Thursday both read "T"), plus whether the day is selected.
+ */
+@Composable
+internal fun DayPicker(schedule: Set<DayOfWeek>, onToggle: (DayOfWeek) -> Unit) {
+    val locale = Locale.getDefault()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DayOfWeek.entries.forEach { day ->
+            val selected = day in schedule
+            val name = day.getDisplayName(TextStyle.FULL, locale)
+            Surface(
+                selected = selected,
+                onClick = { onToggle(day) },
+                shape = CircleShape,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .weight(1f)
+                    .aspectRatio(1f)
+                    .semantics { contentDescription = name },
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        day.getDisplayName(TextStyle.NARROW, locale),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.clearAndSetSemantics { },
+                    )
+                }
+            }
         }
     }
 }

@@ -6,6 +6,7 @@ import android.content.Intent
 import com.janreins.habitude.HabitudeApplication
 import com.janreins.habitude.domain.HabitType
 import com.janreins.habitude.domain.Reminders
+import com.janreins.habitude.widget.HabitWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,7 +25,7 @@ private fun BroadcastReceiver.work(block: suspend () -> Unit) {
     }
 }
 
-/** Fires a habit reminder or the evening streak check, then sets tomorrow's alarm. */
+/** Fires a habit reminder, the evening streak check or the midnight widget refresh, then sets tomorrow's alarm. */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val app = context.applicationContext as HabitudeApplication
@@ -52,6 +53,10 @@ class ReminderReceiver : BroadcastReceiver() {
                     Reminders.nudgeFor(items, today)?.let { Notifications.showNudge(context, it) }
                     app.reminders.scheduleNudge(true, app.settings.eveningNudgeMinutes)
                 }
+                ACTION_MIDNIGHT -> {
+                    runCatching { HabitWidget.refresh(context) }
+                    app.reminders.scheduleMidnight()
+                }
             }
         }
     }
@@ -59,6 +64,7 @@ class ReminderReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_HABIT = "com.janreins.habitude.REMIND_HABIT"
         const val ACTION_NUDGE = "com.janreins.habitude.STREAK_NUDGE"
+        const val ACTION_MIDNIGHT = "com.janreins.habitude.MIDNIGHT"
     }
 }
 
