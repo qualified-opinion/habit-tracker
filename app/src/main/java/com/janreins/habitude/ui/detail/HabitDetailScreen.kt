@@ -177,7 +177,7 @@ internal fun HabitStats(
                 // Any day counts towards a weekly goal, so an empty day isn't a "rest day".
                 val caption = if (habit.isWeekly && mark == DayMark.REST) "${dayCaption(day, mark).substringBefore(" · ")} · Not done"
                 else dayCaption(day, mark)
-                val target = habit.dailyTarget
+                val target = habit.dailyTargetOn(day).takeIf { habit.isCount }
                 if (target != null && mark != DayMark.NONE) "$caption · ${item.countOn(day)} of $target" else caption
             },
             hint = "Tap a day to see or change it",

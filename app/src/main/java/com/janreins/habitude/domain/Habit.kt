@@ -35,6 +35,8 @@ data class Habit(
      * day done (2 to 99). Null means a single tick does it.
      */
     val dailyTarget: Int? = null,
+    /** Earlier daily goals of a counted habit, so changing the goal doesn't rewrite the past. Oldest first. */
+    val pastDailyTargets: List<PastDailyTarget> = emptyList(),
 ) {
     /** A build habit with a times-a-week goal rather than set days. */
     val isWeekly: Boolean get() = type == HabitType.BUILD && weeklyTarget != null
@@ -46,6 +48,27 @@ data class Habit(
     fun isDue(day: LocalDate): Boolean {
         val days = pastSchedules.firstOrNull { !day.isAfter(it.until) }?.days ?: schedule
         return day.dayOfWeek in days.ifEmpty { DayOfWeek.entries.toSet() }
+    }
+
+    /**
+     * The daily goal that applied on [day]: an earlier goal for days before it last changed,
+     * otherwise [dailyTarget]. Days from before goals were remembered use the current goal.
+     */
+    fun dailyTargetOn(day: LocalDate): Int? =
+        pastDailyTargets.firstOrNull { !day.isAfter(it.until) }?.target ?: dailyTarget
+
+    /**
+     * This habit with its daily goal changed to [newTarget] from [today] on. Days before
+     * [today] keep the goal they had. Changing it twice in one day keeps the first old goal.
+     */
+    fun withDailyTarget(newTarget: Int?, today: LocalDate): Habit {
+        val old = dailyTarget
+        if (newTarget == old) return this
+        val yesterday = today.minusDays(1)
+        val alreadyChangedToday = pastDailyTargets.lastOrNull()?.until?.let { !it.isBefore(yesterday) } == true
+        // A single tick has no goal to remember; its days count as done at whatever goal applies.
+        if (old == null || yesterday.isBefore(createdOn) || alreadyChangedToday) return copy(dailyTarget = newTarget)
+        return copy(dailyTarget = newTarget, pastDailyTargets = pastDailyTargets + PastDailyTarget(yesterday, old))
     }
 
     /**
@@ -64,6 +87,9 @@ data class Habit(
 /** A schedule a habit used to have, up to and including [until]. */
 data class PastSchedule(val until: LocalDate, val days: Set<DayOfWeek>)
 
+/** A daily goal a counted habit used to have, up to and including [until]. */
+data class PastDailyTarget(val until: LocalDate, val target: Int)
+
 /**
  * A habit with every day it has an entry for. For a [HabitType.BUILD] habit an entry
  * means "done that day"; for a [HabitType.BREAK] habit it means "slipped that day".
@@ -77,7 +103,7 @@ data class HabitWithEntries(
     val notes: Map<LocalDate, String> = emptyMap(),
 ) {
     /** How many were counted on [day]. A day ticked done without a count counts as the goal. */
-    fun countOn(day: LocalDate): Int = Counts.current(counts[day], day in entries, habit.dailyTarget ?: 1)
+    fun countOn(day: LocalDate): Int = Counts.current(counts[day], day in entries, habit.dailyTargetOn(day) ?: 1)
 }
 
 object Schedule {

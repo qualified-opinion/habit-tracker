@@ -64,4 +64,28 @@ class HabitRepositoryPastDaysTest {
         repository.addCount(id, yesterday, 1)
         assertTrue(yesterday in repository.snapshot().single().entries)
     }
+
+    @Test fun oldDaysAreJudgedByTheGoalTheyHad() = runBlocking {
+        val id = repository.save(habit)
+        repository.addCount(id, past, 6, today)
+        // The form changes the goal from today on, keeping 8 for the days before.
+        repository.save(repository.getHabit(id)!!.withDailyTarget(10, today))
+        val item = repository.snapshot().single()
+        assertEquals(8, item.habit.dailyTargetOn(past))
+        assertEquals(10, item.habit.dailyTargetOn(today))
+        // Two more on the old day reach its own goal of 8, not today's 10.
+        repository.addCount(id, past, 2, today)
+        assertEquals(setOf(past), repository.snapshot().single().entries)
+        repository.addCount(id, today, 8, today)
+        assertFalse(today in repository.snapshot().single().entries)
+    }
+
+    @Test fun oldGoalsSurviveABackupRestore() = runBlocking {
+        val id = repository.save(habit)
+        repository.save(repository.getHabit(id)!!.withDailyTarget(10, today))
+        val items = repository.snapshot()
+        repository.replaceAll(items)
+        assertEquals(items.single().habit.pastDailyTargets, repository.snapshot().single().habit.pastDailyTargets)
+        assertEquals(8, repository.snapshot().single().habit.dailyTargetOn(past))
+    }
 }

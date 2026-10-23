@@ -49,6 +49,8 @@ data class BackupHabit(
     val counts: Map<String, Int> = emptyMap(),
     /** yyyy-MM-dd to the note written on that day. */
     val notes: Map<String, String> = emptyMap(),
+    /** Earlier daily goals, oldest first. Missing in backups from before goal history. */
+    val pastDailyTargets: List<BackupPastDailyTarget> = emptyList(),
 )
 
 @Serializable
@@ -57,6 +59,13 @@ data class BackupPastSchedule(
     val until: String,
     /** ISO day numbers, 1 = Monday … 7 = Sunday. */
     val days: List<Int>,
+)
+
+@Serializable
+data class BackupPastDailyTarget(
+    /** yyyy-MM-dd, the last day this goal applied. */
+    val until: String,
+    val target: Int,
 )
 
 data class BackupContents(
@@ -172,6 +181,7 @@ object Backup {
                         dailyTarget = habit.dailyTarget,
                         counts = counts.toSortedMap().mapKeys { it.key.toString() },
                         notes = notes.toSortedMap().mapKeys { it.key.toString() },
+                        pastDailyTargets = habit.pastDailyTargets.map { BackupPastDailyTarget(it.until.toString(), it.target) },
                     )
                 },
             ),
@@ -218,6 +228,11 @@ object Backup {
                         archived = h.archived,
                         weeklyTarget = h.weeklyTarget?.takeIf { type == HabitType.BUILD && it in 1..6 },
                         dailyTarget = h.dailyTarget?.takeIf { type == HabitType.BUILD && it in 2..Counts.MAX_TARGET },
+                        pastDailyTargets = if (type != HabitType.BUILD) emptyList() else h.pastDailyTargets
+                            .filter { it.target in 2..Counts.MAX_TARGET }
+                            .map { PastDailyTarget(LocalDate.parse(it.until), it.target) }
+                            .distinctBy { it.until }
+                            .sortedBy { it.until },
                     ),
                     entries = h.entries.map { LocalDate.parse(it) }.toSet(),
                     counts = h.counts

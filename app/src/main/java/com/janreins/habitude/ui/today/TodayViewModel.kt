@@ -150,6 +150,6 @@ internal fun HabitWithEntries.toCard(day: LocalDate, today: LocalDate = day): Ha
         best = Streaks.best(this, today),
         weeklyTarget = habit.weeklyTarget.takeIf { habit.isWeekly },
         doneThisWeek = Streaks.doneInWeek(entries, day, today),
-        dailyTarget = habit.dailyTarget.takeIf { habit.isCount },
+        dailyTarget = habit.dailyTargetOn(day).takeIf { habit.isCount },
         countOnDay = countOn(day),
     )
